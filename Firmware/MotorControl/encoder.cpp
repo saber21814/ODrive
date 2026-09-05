@@ -2,6 +2,21 @@
 #include "odrive_main.h"
 #include <Drivers/STM32/stm32_system.h>
 #include <bitset>
+#include "as5600_utils.hpp"
+
+#if HW_VERSION_MAJOR == 3
+static Encoder* as5600_owner = nullptr;
+
+extern "C" void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef* hi2c) {
+    if (hi2c == &hi2c1 && as5600_owner)
+        as5600_owner->as5600_rx_complete();
+}
+
+extern "C" void HAL_I2C_ErrorCallback(I2C_HandleTypeDef* hi2c) {
+    if (hi2c == &hi2c1 && as5600_owner)
+        as5600_owner->as5600_i2c_error();
+}
+#endif
 
 Encoder::Encoder(TIM_HandleTypeDef* timer, Stm32Gpio index_gpio,
                  Stm32Gpio hallA_gpio, Stm32Gpio hallB_gpio, Stm32Gpio hallC_gpio,
@@ -18,6 +33,19 @@ static void enc_index_cb_wrapper(void* ctx) {
 
 bool Encoder::apply_config(ODriveIntf::MotorIntf::MotorType motor_type) {
     config_.parent = this;
+
+    if (config_.mode == MODE_I2C_ABS_AS5600) {
+#if HW_VERSION_MAJOR == 3
+        if (!axis_ || axis_->axis_num_ != 1 || config_.cpr != as5600::CPR ||
+            config_.use_index || !std::isfinite(config_.phase_delay_compensation) ||
+            config_.phase_delay_compensation < 0.0f ||
+            config_.phase_delay_compensation > 0.005f) {
+            return false;
+        }
+#else
+        return false;
+#endif
+    }
 
     update_pll_gains();
 
@@ -57,13 +85,164 @@ void Encoder::setup() {
         abs_spi_dma_tx_[0] = 0x0000;
     }
 
-    if(mode_ & MODE_FLAG_ABS){
+    if((mode_ & MODE_FLAG_ABS) && mode_ != MODE_I2C_ABS_AS5600){
         abs_spi_cs_pin_init();
-
-        if (axis_->controller_.config_.anticogging.pre_calibrated) {
-            axis_->controller_.anticogging_valid_ = true;
-        }
     }
+
+    if ((mode_ & MODE_FLAG_ABS) && axis_->controller_.config_.anticogging.pre_calibrated)
+        axis_->controller_.anticogging_valid_ = true;
+
+    if (mode_ == MODE_I2C_ABS_AS5600) {
+#if HW_VERSION_MAJOR == 3
+        if (!axis_ || axis_->axis_num_ != 1 || i2c1_as5600_master == 0 ||
+            config_.cpr != as5600::CPR || config_.use_index) {
+            odrv.misconfigured_ = true;
+            set_error(ERROR_UNSUPPORTED_ENCODER_MODE);
+            return;
+        }
+        as5600_owner = this;
+        if (!as5600_configure_volatile()) {
+            set_error(ERROR_ABS_I2C_COM_FAIL);
+        } else {
+            as5600_monitor_start_tick_ = odrv.n_evt_sampling_;
+        }
+#else
+        odrv.misconfigured_ = true;
+        set_error(ERROR_UNSUPPORTED_ENCODER_MODE);
+#endif
+    }
+}
+
+bool Encoder::as5600_configure_volatile() {
+#if HW_VERSION_MAJOR == 3
+    uint8_t conf_buf[2] = {0, 0};
+    if (HAL_I2C_Mem_Read(&hi2c1, 0x36 << 1, 0x07, I2C_MEMADD_SIZE_8BIT,
+                         conf_buf, 2, 10) != HAL_OK) {
+        return false;
+    }
+    uint16_t conf = (uint16_t)(((uint16_t)conf_buf[0] << 8) | conf_buf[1]);
+    uint16_t desired = as5600::configure_conf(conf);
+    uint8_t desired_buf[2] = {(uint8_t)(desired >> 8), (uint8_t)desired};
+    if (HAL_I2C_Mem_Write(&hi2c1, 0x36 << 1, 0x07, I2C_MEMADD_SIZE_8BIT,
+                          desired_buf, 2, 10) != HAL_OK) {
+        return false;
+    }
+    uint8_t verify_buf[2] = {0, 0};
+    if (HAL_I2C_Mem_Read(&hi2c1, 0x36 << 1, 0x07, I2C_MEMADD_SIZE_8BIT,
+                         verify_buf, 2, 10) != HAL_OK) {
+        return false;
+    }
+    uint16_t verify = (uint16_t)(((uint16_t)verify_buf[0] << 8) | verify_buf[1]);
+    uint8_t status = 0;
+    if (verify == desired &&
+        HAL_I2C_Mem_Read(&hi2c1, 0x36 << 1, 0x0b, I2C_MEMADD_SIZE_8BIT,
+                         &status, 1, 10) == HAL_OK) {
+        as5600_status_buf_[0] = status;
+        as5600_status_ = status;
+        return true;
+    }
+    return false;
+#else
+    return false;
+#endif
+}
+
+bool Encoder::as5600_start_read(uint8_t reg, uint8_t* buf, uint16_t len, uint8_t request) {
+#if HW_VERSION_MAJOR == 3
+    if (as5600_i2c_pending_ || as5600_recovery_requested_)
+        return false;
+    as5600_i2c_request_ = request;
+    as5600_i2c_pending_ = 1;
+    if (HAL_I2C_Mem_Read_IT(&hi2c1, 0x36 << 1, reg, I2C_MEMADD_SIZE_8BIT,
+                            buf, len) != HAL_OK) {
+        as5600_i2c_pending_ = 0;
+        as5600_complete_seq_++;
+        as5600_failed_seq_++;
+        as5600_error_seq_++;
+        as5600_recovery_requested_ = true;
+        return false;
+    }
+    return true;
+#else
+    (void)reg;
+    (void)buf;
+    (void)len;
+    (void)request;
+    return false;
+#endif
+}
+
+void Encoder::as5600_rx_complete() {
+#if HW_VERSION_MAJOR == 3
+    // The ISR is deliberately limited to publishing the completed transaction.
+    if (as5600_i2c_request_ == 1) {
+        as5600_last_sample_tick_ = odrv.n_evt_sampling_;
+        __DMB();
+        as5600_sample_seq_++;
+    }
+    if (as5600_i2c_request_ == 2) {
+        __DMB();
+        as5600_status_seq_++;
+    }
+    as5600_complete_seq_++;
+    as5600_i2c_pending_ = 0;
+#endif
+}
+
+void Encoder::as5600_i2c_error() {
+#if HW_VERSION_MAJOR == 3
+    as5600_i2c_pending_ = 0;
+    as5600_complete_seq_++;
+    as5600_failed_seq_++;
+    as5600_error_seq_++;
+    as5600_recovery_requested_ = true;
+#endif
+}
+
+void Encoder::as5600_service_recovery() {
+#if HW_VERSION_MAJOR == 3
+    if (!as5600_recovery_requested_ || !axis_ || axis_->motor_.is_armed_)
+        return;
+    GPIO_InitTypeDef gpio = {};
+    gpio.Pin = GPIO_PIN_6 | GPIO_PIN_7;
+    gpio.Pull = GPIO_PULLUP;
+    gpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    if (as5600_recovery_state_ == 0) {
+        HAL_I2C_DeInit(&hi2c1);
+        gpio.Mode = GPIO_MODE_OUTPUT_OD;
+        HAL_GPIO_Init(GPIOB, &gpio);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6 | GPIO_PIN_7, GPIO_PIN_SET);
+        as5600_recovery_state_ = 1;
+    } else if (as5600_recovery_state_ == 1) {
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
+        as5600_recovery_state_ = 2;
+    } else if (as5600_recovery_state_ == 2) {
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+        if (as5600::recovery_clocks_complete(++as5600_recovery_pulses_))
+            as5600_recovery_state_ = 3;
+        else
+            as5600_recovery_state_ = 1;
+    } else if (as5600_recovery_state_ == 3) {
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_RESET);
+        as5600_recovery_state_ = 4;
+    } else if (as5600_recovery_state_ == 4) {
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+        as5600_recovery_state_ = 5;
+    } else if (as5600_recovery_state_ == 5) {
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_SET);
+        gpio.Mode = GPIO_MODE_AF_OD;
+        gpio.Alternate = GPIO_AF4_I2C1;
+        HAL_GPIO_Init(GPIOB, &gpio);
+        MX_I2C1_AS5600_Init();
+        as5600_i2c_pending_ = 0;
+        as5600_have_sample_ = false;
+        as5600_first_sample_ = false;
+        as5600_monitor_start_tick_ = odrv.n_evt_sampling_;
+        as5600_recovery_requested_ = false;
+        as5600_recovery_state_ = 0;
+        as5600_recovery_pulses_ = 0;
+    }
+#endif
 }
 
 void Encoder::set_error(Error error) {
@@ -499,6 +678,21 @@ void Encoder::sample_now() {
             // Do nothing
         } break;
 
+        case MODE_I2C_ABS_AS5600: {
+#if HW_VERSION_MAJOR == 3
+            if (!i2c1_as5600_master)
+                break;
+            // Sampling runs at 8 kHz. Every second slot starts a 2-byte angle
+            // transaction, yielding a non-blocking 4 kHz request rate.
+            if ((as5600_poll_ticks_ & 1u) == 0u) {
+                as5600_start_read(0x0c, (uint8_t*)as5600_angle_buf_, 2, 1);
+            } else if ((as5600_poll_ticks_ & 7u) == 1u) {
+                as5600_start_read(0x0b, (uint8_t*)as5600_status_buf_, 1, 2);
+            }
+            as5600_poll_ticks_++;
+#endif
+        } break;
+
         default: {
            set_error(ERROR_UNSUPPORTED_ENCODER_MODE);
         } break;
@@ -526,7 +720,9 @@ void Encoder::decode_hall_samples() {
 }
 
 bool Encoder::abs_spi_start_transaction() {
-    if (mode_ & MODE_FLAG_ABS){
+    if (mode_ == MODE_SPI_ABS_RLS || mode_ == MODE_SPI_ABS_AMS ||
+        mode_ == MODE_SPI_ABS_CUI || mode_ == MODE_SPI_ABS_AEAT ||
+        mode_ == MODE_SPI_ABS_MA732){
         if (Stm32SpiArbiter::acquire_task(&spi_task_)) {
             spi_task_.ncs_gpio = abs_spi_cs_gpio_;
             spi_task_.tx_buf = (uint8_t*)abs_spi_dma_tx_;
@@ -652,6 +848,79 @@ bool Encoder::update() {
     // update internal encoder state.
     int32_t delta_enc = 0;
     int32_t pos_abs_latched = pos_abs_; //LATCH
+    bool as5600_new_sample = false;
+
+    if (mode_ == MODE_I2C_ABS_AS5600) {
+        as5600_service_recovery();
+        uint32_t sample_seq;
+        uint32_t error_seq;
+        uint32_t status_seq;
+        uint32_t complete_seq;
+        uint32_t failed_seq;
+        uint16_t raw;
+        uint8_t status;
+        uint32_t last_sample_tick;
+        uint32_t prim = cpu_enter_critical();
+        sample_seq = as5600_sample_seq_;
+        error_seq = as5600_error_seq_;
+        status_seq = as5600_status_seq_;
+        complete_seq = as5600_complete_seq_;
+        failed_seq = as5600_failed_seq_;
+        raw = as5600::decode_raw_angle(as5600_angle_buf_[0], as5600_angle_buf_[1]);
+        status = as5600_status_buf_[0];
+        last_sample_tick = as5600_last_sample_tick_;
+        cpu_exit_critical(prim);
+        if (status_seq != as5600_seen_status_seq_) {
+            as5600_seen_status_seq_ = status_seq;
+            as5600_status_ = status;
+            if (!as5600::magnet_detected(status)) {
+                if (++as5600_bad_magnet_count_ >= 2)
+                    set_error(ERROR_ABS_I2C_MAGNET_ERROR);
+            } else {
+                as5600_bad_magnet_count_ = 0;
+            }
+        }
+        const uint32_t sample_reference_tick = as5600_have_sample_ ?
+            last_sample_tick : as5600_monitor_start_tick_;
+        sample_age_ = (odrv.n_evt_sampling_ - sample_reference_tick) * current_meas_period;
+        if (sample_seq != as5600_seen_sample_seq_) {
+            as5600_seen_sample_seq_ = sample_seq;
+            as5600_new_sample = true;
+            if (!as5600_have_sample_) {
+                pos_abs_ = raw;
+                count_in_cpr_ = raw;
+                shadow_count_ = raw;
+                pos_estimate_counts_ = (float)raw;
+                pos_cpr_counts_ = (float)raw;
+                as5600_have_sample_ = true;
+                as5600_first_sample_ = true;
+                if (config_.pre_calibrated)
+                    is_ready_ = true;
+            } else {
+                pos_abs_ = raw;
+            }
+            as5600_consecutive_errors_ = 0;
+        }
+        if (error_seq != as5600_seen_error_seq_) {
+            as5600_seen_error_seq_ = error_seq;
+            as5600_consecutive_errors_++;
+            if (as5600::communication_failed(as5600_consecutive_errors_))
+                set_error(ERROR_ABS_I2C_COM_FAIL);
+        }
+        if (complete_seq != as5600_seen_complete_seq_) {
+            uint32_t complete_delta = complete_seq - as5600_seen_complete_seq_;
+            uint32_t failed_delta = failed_seq - as5600_seen_failed_seq_;
+            float transaction_error = complete_delta ?
+                (float)failed_delta / (float)complete_delta : 1.0f;
+            i2c_error_rate_ += 0.05f * (transaction_error - i2c_error_rate_);
+            as5600_seen_complete_seq_ = complete_seq;
+            as5600_seen_failed_seq_ = failed_seq;
+        }
+        if (as5600::sample_is_stale(odrv.n_evt_sampling_, sample_reference_tick)) {
+            set_error(ERROR_ABS_I2C_COM_FAIL);
+            as5600_recovery_requested_ = true;
+        }
+    }
 
     switch (mode_) {
         case MODE_INCREMENTAL: {
@@ -753,6 +1022,19 @@ bool Encoder::update() {
             }
 
         }break;
+        case MODE_I2C_ABS_AS5600: {
+            if (!as5600_have_sample_) {
+                delta_enc = 0;
+            } else if (as5600_first_sample_) {
+                delta_enc = 0;
+                as5600_first_sample_ = false;
+                pos_abs_latched = pos_abs_;
+            } else {
+                if (as5600_new_sample)
+                    pos_abs_latched = pos_abs_;
+                delta_enc = as5600::wrapped_delta(pos_abs_latched, count_in_cpr_);
+            }
+        } break;
         default: {
             set_error(ERROR_UNSUPPORTED_ENCODER_MODE);
             return false;
@@ -763,7 +1045,7 @@ bool Encoder::update() {
     count_in_cpr_ += delta_enc;
     count_in_cpr_ = mod(count_in_cpr_, config_.cpr);
 
-    if(mode_ & MODE_FLAG_ABS)
+    if((mode_ & MODE_FLAG_ABS) && mode_ != MODE_I2C_ABS_AS5600)
         count_in_cpr_ = pos_abs_latched;
 
     // Memory for pos_circular
@@ -832,6 +1114,15 @@ bool Encoder::update() {
     //TODO avoid recomputing elec_rad_per_enc every time
     float elec_rad_per_enc = axis_->motor_.config_.pole_pairs * 2 * M_PI * (1.0f / (float)(config_.cpr));
     float ph = elec_rad_per_enc * (interpolated_enc - config_.phase_offset_float);
+    if (mode_ == MODE_I2C_ABS_AS5600) {
+        float delay = config_.phase_delay_compensation;
+        if (!std::isfinite(delay) || delay < 0.0f || delay > 0.005f) {
+            odrv.misconfigured_ = true;
+            delay = 0.0004f;
+        }
+        float vel = vel_estimate_.any().value_or(0.0f);
+        ph += 2.0f * M_PI * vel * axis_->motor_.config_.pole_pairs * delay;
+    }
     
     if (is_ready_) {
         phase_ = wrap_pm_pi(ph) * config_.direction;

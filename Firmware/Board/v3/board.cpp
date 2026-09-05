@@ -337,7 +337,19 @@ bool board_init() {
         MX_USART2_UART_Init();
     }
 
-    if (odrv.config_.enable_i2c_a) {
+    const bool axis1_as5600 =
+        encoders[1].config_.mode == ODriveIntf::EncoderIntf::MODE_I2C_ABS_AS5600;
+    if (axis1_as5600) {
+        // AS5600 is a dedicated master on ENC1_A/B (PB6/PB7, GPIO12/13).
+        // It cannot share the legacy I2C slave service or another axis.
+        if (odrv.config_.enable_i2c_a ||
+            odrv.config_.gpio_modes[12] != ODriveIntf::GPIO_MODE_I2C_A ||
+            odrv.config_.gpio_modes[13] != ODriveIntf::GPIO_MODE_I2C_A) {
+            odrv.misconfigured_ = true;
+        } else {
+            MX_I2C1_AS5600_Init();
+        }
+    } else if (odrv.config_.enable_i2c_a) {
         // Set up the direction GPIO as input
         get_gpio(3).config(GPIO_MODE_INPUT, GPIO_PULLUP);
         get_gpio(4).config(GPIO_MODE_INPUT, GPIO_PULLUP);

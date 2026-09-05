@@ -1246,6 +1246,10 @@ interfaces:
           ABS_SPI_COM_FAIL:
           ABS_SPI_NOT_READY:
           HALL_NOT_CALIBRATED_YET:
+          ABS_I2C_COM_FAIL:
+            doc: AS5600 I2C communication failed or the sample became stale.
+          ABS_I2C_MAGNET_ERROR:
+            doc: AS5600 no longer detects the magnet (STATUS.MD is clear).
       is_ready: readonly bool
       index_found: readonly bool
       shadow_count: 
@@ -1295,6 +1299,12 @@ interfaces:
         type: int32
         doc: The last (valid) position from an absolute encoder, if used.
       spi_error_rate: readonly float32
+      as5600_status: readonly uint8
+      i2c_error_rate: readonly float32
+      sample_age:
+        type: readonly float32
+        unit: seconds
+        doc: Age of the most recently received AS5600 angle sample.
       config:
         c_is_class: False
         attributes:
@@ -1322,6 +1332,11 @@ interfaces:
           phase_offset: int32
           phase_offset_float: float32
           direction: int32
+          phase_delay_compensation:
+            type: float32
+            unit: seconds
+            default: 0.0004
+            doc: Delay compensation used only by the AS5600 I2C absolute encoder.
           pre_calibrated: {type: bool, c_setter: set_pre_calibrated}
           enable_phase_interpolation: bool
           bandwidth: 
@@ -1599,6 +1614,9 @@ valuetypes:
       SPI_ABS_MA732:
         value: 0x104
         doc: MagAlpha MA732 magnetic encoder
+      I2C_ABS_AS5600:
+        value: 0x105
+        doc: AS5600 12-bit absolute magnetic encoder on Axis1 I2C1
 
   ODrive.Controller.ControlMode:
     values:

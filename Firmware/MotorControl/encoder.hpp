@@ -6,6 +6,7 @@ class Encoder;
 #include <board.h> // needed for arm_math.h
 #include <Drivers/STM32/stm32_spi_arbiter.hpp>
 #include "utils.hpp"
+#include "as5600_utils.hpp"
 #include <autogen/interfaces.hpp>
 #include "component.hpp"
 
@@ -37,6 +38,7 @@ public:
         bool enable_phase_interpolation = true; // Use velocity to interpolate inside the count state
         bool find_idx_on_lockin_only = false; // Only be sensitive during lockin scan constant vel state
         bool ignore_illegal_hall_state = false; // dont error on bad states like 000 or 111
+        float phase_delay_compensation = 0.0004f; // AS5600 I2C pipeline delay [s]
         uint8_t hall_polarity = 0;
         bool hall_polarity_calibrated = false;
         std::array<float, 6> hall_edge_phcnt = hall_edge_defaults;
@@ -83,6 +85,10 @@ public:
     int32_t hall_model(float internal_pos);
     bool update();
 
+    // AS5600 I2C callbacks run in the I2C interrupt and only publish a sample.
+    void as5600_rx_complete();
+    void as5600_i2c_error();
+
     TIM_HandleTypeDef* timer_;
     Stm32Gpio index_gpio_;
     Stm32Gpio hallA_gpio_;
@@ -110,6 +116,9 @@ public:
     float calib_scan_response_ = 0.0f; // debug report from offset calib
     int32_t pos_abs_ = 0;
     float spi_error_rate_ = 0.0f;
+    uint8_t as5600_status_ = 0;
+    float i2c_error_rate_ = 0.0f;
+    float sample_age_ = INFINITY;
 
     OutputPort<float> pos_estimate_ = 0.0f; // [turn]
     OutputPort<float> vel_estimate_ = 0.0f; // [turn/s]
@@ -144,6 +153,35 @@ public:
     uint16_t abs_spi_dma_tx_[1] = {0xFFFF};
     uint16_t abs_spi_dma_rx_[1];
     Stm32SpiArbiter::SpiTask spi_task_;
+
+    volatile uint8_t as5600_angle_buf_[2] = {0, 0};
+    volatile uint8_t as5600_status_buf_[1] = {0};
+    volatile uint8_t as5600_i2c_pending_ = 0;
+    volatile uint8_t as5600_i2c_request_ = 0;
+    volatile uint32_t as5600_sample_seq_ = 0;
+    volatile uint32_t as5600_status_seq_ = 0;
+    volatile uint32_t as5600_complete_seq_ = 0;
+    volatile uint32_t as5600_failed_seq_ = 0;
+    volatile uint32_t as5600_error_seq_ = 0;
+    volatile uint32_t as5600_last_sample_tick_ = 0;
+    uint32_t as5600_monitor_start_tick_ = 0;
+    uint32_t as5600_seen_sample_seq_ = 0;
+    uint32_t as5600_seen_status_seq_ = 0;
+    uint32_t as5600_seen_complete_seq_ = 0;
+    uint32_t as5600_seen_failed_seq_ = 0;
+    uint32_t as5600_seen_error_seq_ = 0;
+    uint8_t as5600_bad_magnet_count_ = 0;
+    uint8_t as5600_consecutive_errors_ = 0;
+    uint8_t as5600_poll_ticks_ = 0;
+    bool as5600_have_sample_ = false;
+    bool as5600_first_sample_ = false;
+    volatile bool as5600_recovery_requested_ = false;
+    uint8_t as5600_recovery_state_ = 0;
+    uint8_t as5600_recovery_pulses_ = 0;
+
+    bool as5600_start_read(uint8_t reg, uint8_t* buf, uint16_t len, uint8_t request);
+    bool as5600_configure_volatile(void);
+    void as5600_service_recovery(void);
 
     constexpr float getCoggingRatio(){
         return 1.0f / 3600.0f;

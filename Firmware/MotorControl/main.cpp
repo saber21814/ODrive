@@ -534,7 +534,8 @@ static void rtos_main(void*) {
 
     // Set up the CS pins for absolute encoders (TODO: move to GPIO init switch statement)
     for(auto& axis : axes){
-        if(axis.encoder_.config_.mode & Encoder::MODE_FLAG_ABS){
+        if((axis.encoder_.config_.mode & Encoder::MODE_FLAG_ABS) &&
+           axis.encoder_.config_.mode != ODriveIntf::EncoderIntf::MODE_I2C_ABS_AS5600){
             axis.encoder_.abs_spi_cs_pin_init();
         }
     }
@@ -773,7 +774,13 @@ extern "C" int main(void) {
                 GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
                 GPIO_InitStruct.Pull = GPIO_PULLUP;
                 GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-                if (!odrv.config_.enable_i2c_a) {
+                bool axis1_as5600 = false;
+#if HW_VERSION_MAJOR == 3 && AXIS_COUNT > 1
+                axis1_as5600 = encoders[1].config_.mode ==
+                    ODriveIntf::EncoderIntf::MODE_I2C_ABS_AS5600;
+#endif
+                const bool as5600_pin = (i == 12 || i == 13);
+                if (!odrv.config_.enable_i2c_a && !(axis1_as5600 && as5600_pin)) {
                     odrv.misconfigured_ = true;
                 }
             } break;

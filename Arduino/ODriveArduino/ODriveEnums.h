@@ -67,6 +67,7 @@ enum EncoderMode {
     ENCODER_MODE_SPI_ABS_AEAT                = 258,
     ENCODER_MODE_SPI_ABS_RLS                 = 259,
     ENCODER_MODE_SPI_ABS_MA732               = 260,
+    ENCODER_MODE_I2C_ABS_AS5600              = 261,
 };
 
 // ODrive.Controller.ControlMode
@@ -191,6 +192,8 @@ enum EncoderError {
     ENCODER_ERROR_ABS_SPI_COM_FAIL           = 0x00000080,
     ENCODER_ERROR_ABS_SPI_NOT_READY          = 0x00000100,
     ENCODER_ERROR_HALL_NOT_CALIBRATED_YET    = 0x00000200,
+    ENCODER_ERROR_ABS_I2C_COM_FAIL           = 0x00000400,
+    ENCODER_ERROR_ABS_I2C_MAGNET_ERROR       = 0x00000800,
 };
 
 // ODrive.SensorlessEstimator.Error
