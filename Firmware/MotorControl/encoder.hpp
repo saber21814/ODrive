@@ -14,6 +14,7 @@ class Encoder;
 class Encoder : public ODriveIntf::EncoderIntf {
 public:
     static constexpr uint32_t MODE_FLAG_ABS = 0x100;
+    static constexpr uint8_t AS5600_CALIBRATION_VERSION = 1;
     static constexpr std::array<float, 6> hall_edge_defaults = 
         {0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
 
@@ -39,6 +40,7 @@ public:
         bool find_idx_on_lockin_only = false; // Only be sensitive during lockin scan constant vel state
         bool ignore_illegal_hall_state = false; // dont error on bad states like 000 or 111
         float phase_delay_compensation = 0.0004f; // AS5600 I2C pipeline delay [s]
+        uint8_t as5600_calibration_version = 0;
         uint8_t hall_polarity = 0;
         bool hall_polarity_calibrated = false;
         std::array<float, 6> hall_edge_phcnt = hall_edge_defaults;
@@ -88,6 +90,8 @@ public:
     // AS5600 I2C callbacks run in the I2C interrupt and only publish a sample.
     void as5600_rx_complete();
     void as5600_i2c_error();
+    void as5600_service_idle();
+    bool as5600_closed_loop_ready() const;
 
     TIM_HandleTypeDef* timer_;
     Stm32Gpio index_gpio_;
@@ -119,6 +123,10 @@ public:
     uint8_t as5600_status_ = 0;
     float i2c_error_rate_ = 0.0f;
     float sample_age_ = INFINITY;
+    float as5600_angle_sample_rate_ = 0.0f;
+    float as5600_status_sample_rate_ = 0.0f;
+    uint32_t as5600_busy_skip_count_ = 0;
+    uint8_t as5600_consecutive_errors_ = 0;
 
     OutputPort<float> pos_estimate_ = 0.0f; // [turn]
     OutputPort<float> vel_estimate_ = 0.0f; // [turn/s]
@@ -163,7 +171,10 @@ public:
     volatile uint32_t as5600_complete_seq_ = 0;
     volatile uint32_t as5600_failed_seq_ = 0;
     volatile uint32_t as5600_error_seq_ = 0;
+    volatile uint32_t as5600_busy_skip_seq_ = 0;
     volatile uint32_t as5600_last_sample_tick_ = 0;
+    volatile uint32_t as5600_last_status_tick_ = 0;
+    volatile bool as5600_have_status_ = false;
     uint32_t as5600_monitor_start_tick_ = 0;
     uint32_t as5600_seen_sample_seq_ = 0;
     uint32_t as5600_seen_status_seq_ = 0;
@@ -171,17 +182,21 @@ public:
     uint32_t as5600_seen_failed_seq_ = 0;
     uint32_t as5600_seen_error_seq_ = 0;
     uint8_t as5600_bad_magnet_count_ = 0;
-    uint8_t as5600_consecutive_errors_ = 0;
     uint8_t as5600_poll_ticks_ = 0;
     bool as5600_have_sample_ = false;
     bool as5600_first_sample_ = false;
+    bool as5600_resume_after_recovery_ = false;
+    bool as5600_config_i2c_ok_ = false;
+    volatile bool as5600_recovery_blocked_ = false;
     volatile bool as5600_recovery_requested_ = false;
-    uint8_t as5600_recovery_state_ = 0;
-    uint8_t as5600_recovery_pulses_ = 0;
+    volatile uint8_t as5600_irq_consecutive_errors_ = 0;
+    uint32_t as5600_rate_tick_ = 0;
+    uint32_t as5600_rate_angle_seq_ = 0;
+    uint32_t as5600_rate_status_seq_ = 0;
 
     bool as5600_start_read(uint8_t reg, uint8_t* buf, uint16_t len, uint8_t request);
     bool as5600_configure_volatile(void);
-    void as5600_service_recovery(void);
+    void as5600_note_i2c_failure(void);
 
     constexpr float getCoggingRatio(){
         return 1.0f / 3600.0f;

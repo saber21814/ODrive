@@ -7,6 +7,7 @@ namespace as5600 {
 
 static constexpr int32_t CPR = 4096;
 static constexpr uint32_t STALE_TICKS = 16; // 2 ms at the 8 kHz control rate
+static constexpr uint32_t STATUS_STALE_TICKS = 80; // 10 ms at 8 kHz
 static constexpr uint8_t MAX_CONSECUTIVE_FAILURES = 3;
 static constexpr uint8_t RECOVERY_CLOCKS = 9;
 
@@ -19,6 +20,35 @@ inline int32_t wrapped_delta(uint16_t newer, uint16_t older) {
     if (delta > CPR / 2) delta -= CPR;
     if (delta < -CPR / 2) delta += CPR;
     return delta;
+}
+
+inline bool transaction_is_status(uint8_t slot) {
+    return (slot & 7u) == 7u;
+}
+
+inline bool transaction_can_start(bool pending, bool recovery_requested,
+                                  bool recovery_blocked, bool hal_ready,
+                                  bool bus_busy) {
+    return !pending && !recovery_requested && !recovery_blocked &&
+           hal_ready && !bus_busy;
+}
+
+inline bool recovery_can_run(bool requested, bool axis_present, bool armed) {
+    return requested && axis_present && !armed;
+}
+
+inline uint8_t update_failure_count(uint8_t current, bool success) {
+    if (success)
+        return 0;
+    return current == UINT8_MAX ? UINT8_MAX : (uint8_t)(current + 1u);
+}
+
+inline bool status_is_stale(uint32_t now_tick, uint32_t status_tick) {
+    return (uint32_t)(now_tick - status_tick) > STATUS_STALE_TICKS;
+}
+
+inline int32_t resume_multiturn(int32_t shadow, uint16_t raw, uint16_t old_raw) {
+    return shadow + wrapped_delta(raw, old_raw);
 }
 
 inline uint16_t configure_conf(uint16_t conf) {

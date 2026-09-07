@@ -1250,6 +1250,8 @@ interfaces:
             doc: AS5600 I2C communication failed or the sample became stale.
           ABS_I2C_MAGNET_ERROR:
             doc: AS5600 no longer detects the magnet (STATUS.MD is clear).
+          NOT_READY:
+            doc: Encoder feedback is not ready for closed-loop control.
       is_ready: readonly bool
       index_found: readonly bool
       shadow_count: 
@@ -1300,6 +1302,20 @@ interfaces:
         doc: The last (valid) position from an absolute encoder, if used.
       spi_error_rate: readonly float32
       as5600_status: readonly uint8
+      as5600_angle_sample_rate:
+        type: readonly float32
+        unit: Hz
+        doc: Rate of successfully received AS5600 angle samples.
+      as5600_status_sample_rate:
+        type: readonly float32
+        unit: Hz
+        doc: Rate of successfully received AS5600 status samples.
+      as5600_busy_skip_count:
+        type: readonly uint32
+        doc: Number of AS5600 transaction slots skipped because the I2C peripheral or bus was busy.
+      as5600_consecutive_errors:
+        type: readonly uint8
+        doc: Current count of consecutive AS5600 I2C transaction errors.
       i2c_error_rate: readonly float32
       sample_age:
         type: readonly float32
@@ -1337,6 +1353,10 @@ interfaces:
             unit: seconds
             default: 0.0004
             doc: Delay compensation used only by the AS5600 I2C absolute encoder.
+          as5600_calibration_version:
+            type: uint8
+            default: 0
+            doc: Firmware writes 1 only after a successful AS5600 encoder offset calibration. Existing configurations must be recalibrated after upgrading; users must not set this field manually.
           pre_calibrated: {type: bool, c_setter: set_pre_calibrated}
           enable_phase_interpolation: bool
           bandwidth: 

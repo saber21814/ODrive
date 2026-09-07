@@ -19,6 +19,12 @@ void Controller::reset() {
 }
 
 void Controller::set_error(Error error) {
+    // Never leave the previous non-zero request published after the controller
+    // has rejected an estimate or detected overspeed. This also prevents a
+    // secondary UNKNOWN_TORQUE/UNKNOWN_VOLTAGE_COMMAND from hiding the cause.
+    torque_output_ = 0.0f;
+    torque_setpoint_ = 0.0f;
+    vel_integrator_torque_ = 0.0f;
     error_ |= error;
     last_error_time_ = odrv.n_evt_control_loop_ * current_meas_period;
 }

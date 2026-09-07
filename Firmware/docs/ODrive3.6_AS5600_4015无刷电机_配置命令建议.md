@@ -18,6 +18,14 @@
 
 ## 2. 刷写前备份与刷写后初始化
 
+恢复 CAN DBC 生成脚本后，构建环境需要 Python `cantools` 包。首次构建前执行：
+
+```powershell
+python -m pip install cantools
+```
+
+若 `make` 报告 `ModuleNotFoundError: No module named 'cantools'`，这是主机Python依赖缺失，不是固件C++编译错误；安装依赖后重新执行构建。
+
 先在仍运行旧固件时执行：
 
 ```python
@@ -57,9 +65,12 @@ odrv0.axis1.motor.config.resistance_calib_max_voltage = 6.0
 odrv0.axis1.motor.config.current_control_bandwidth = 500
 odrv0.axis1.motor.config.torque_constant = 8.27 / 54.0
 
-odrv0.axis1.controller.config.vel_limit = 2.0
-odrv0.axis1.controller.config.vel_gain = 0.03
-odrv0.axis1.controller.config.vel_integrator_gain = 0.1
+odrv0.axis1.controller.config.vel_limit = 1.0
+odrv0.axis1.controller.config.vel_limit_tolerance = 1.2
+odrv0.axis1.controller.config.vel_gain = 0.005
+odrv0.axis1.controller.config.vel_integrator_gain = 0.02
+odrv0.axis1.controller.config.vel_integrator_limit = 0.05
+odrv0.axis1.controller.config.vel_ramp_rate = 0.2
 ```
 
 `8.27/54 ≈ 0.153 N·m/A` 是 ODrive 按 KV 换算的初始值。厂家给出 `0.23 N·m/A`，两者可能采用了不同的电流定义（相电流/线电流或峰值/RMS）；首次调试不要直接照搬 0.23。
@@ -77,7 +88,7 @@ odrv0.reboot()
 odrv0 = odrive.find_any()
 ```
 
-固件启动时会对 AS5600 的 `CONF(0x07/0x08)` 做易失读改写：正常功耗、watchdog 关闭、`SF=11`、低阈值快速滤波；只读回验证，不写 `OTP 0xFF`。运行时每约 250 µs 发起一次角度读取（RAW ANGLE 0x0C/0x0D），状态读取约 1 kHz。
+固件启动时会对 AS5600 的 `CONF(0x07/0x08)` 做易失读改写：正常功耗、watchdog 关闭、`SF=11`、低阈值快速滤波；只读回验证，不写 `OTP 0xFF`。运行时采用 7 个角度事务加 1 个状态事务的公平调度，目标角度有效率约 3.5 kHz、状态有效率约 500 Hz。
 
 ## 4. 必须按顺序执行的校准
 
@@ -86,6 +97,8 @@ odrv0 = odrive.find_any()
 ```python
 enc1 = odrv0.axis1.encoder
 print(enc1.as5600_status, enc1.i2c_error_rate, enc1.sample_age)
+print(enc1.as5600_angle_sample_rate, enc1.as5600_status_sample_rate)
+print(enc1.as5600_busy_skip_count, enc1.as5600_consecutive_errors)
 print(enc1.pos_abs, enc1.shadow_count, enc1.error)
 dump_errors(odrv0)
 ```
@@ -105,25 +118,38 @@ odrv0.axis1.requested_state = AXIS_STATE_ENCODER_OFFSET_CALIBRATION
 5. 检查 `axis1.motor.is_calibrated`、`axis1.encoder.is_ready` 后保存校准：
 
 ```python
+print(odrv0.axis1.encoder.config.as5600_calibration_version)  # 必须为 1
 odrv0.axis1.motor.config.pre_calibrated = True
 odrv0.axis1.encoder.config.pre_calibrated = True
 odrv0.save_configuration()
 ```
 
-首次不要设置 `pre_calibrated=True`，也不要恢复旧编码器偏置。
+只有固件成功完成 AS5600 编码器偏置校准后，才会自动把 `as5600_calibration_version` 写为 `1`。若仍为 `0`，不要进入闭环或设置 `pre_calibrated=True`，应先排查错误并重新校准。升级后的旧配置必须重新校准；用户不得手动修改该版本字段，也不要恢复旧编码器偏置。
 
 ## 5. 闭环速度和位置测试
 
-先使能速度闭环，并从低值逐级测试：
+刷入本次修复固件后必须重新执行电机校准和编码器偏置校准；不得恢复旧编码器的 `direction`、`phase_offset` 或 `pre_calibrated`。保留超速保护，不要把 `enable_overspeed_error` 设为 `False`。
+
+先使用速度斜坡和受限增益进入闭环：
 
 ```python
 odrv0.axis1.controller.config.control_mode = CONTROL_MODE_VELOCITY_CONTROL
-odrv0.axis1.controller.config.input_mode = INPUT_MODE_PASSTHROUGH
+odrv0.axis1.controller.config.input_mode = INPUT_MODE_VEL_RAMP
+odrv0.axis1.controller.config.vel_ramp_rate = 0.2
+odrv0.axis1.controller.config.vel_limit = 1.0
+odrv0.axis1.controller.config.vel_limit_tolerance = 1.2
+odrv0.axis1.controller.config.vel_gain = 0.005
+odrv0.axis1.controller.config.vel_integrator_gain = 0.02
+odrv0.axis1.controller.config.vel_integrator_limit = 0.05
+odrv0.axis1.controller.input_vel = 0.0
 odrv0.axis1.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL
-odrv0.axis1.controller.input_vel = 0.5
+print(odrv0.axis1.current_state)
+dump_errors(odrv0)
+# 只有 current_state == AXIS_STATE_CLOSED_LOOP_CONTROL 且无错误时才继续
+odrv0.axis1.controller.input_vel = 0.1
 ```
 
-依次测试 `0.5、1、2 turn/s`。随后速度阶梯为：
+先保持 `0.1 turn/s` 至少 30 秒，确认 `vel_estimate` 与 `input_vel` 同号、峰值不超过 `0.2 turn/s`，且 Iq 绝对值不超过 `0.5 A`。再依次测试 `0.2、0.5、1 turn/s`；每次只提高一级并重新观察。完成低速验收后，才进入后续速度阶梯：
 
 | rpm | `input_vel`（turn/s） |
 |---:|---:|
@@ -136,9 +162,10 @@ odrv0.axis1.controller.input_vel = 0.5
 
 每一级检查 `axis1.encoder.error`、`as5600_status`、`i2c_error_rate`、`sample_age`、`motor.current_control.Iq_setpoint`、电流波动、噪声和温升。1000 rpm、11 极对对应约 183 Hz 电频率；只有延迟补偿后换相稳定才通过，否则把最高速度限制在稳定值，或改用 SPI/ABI 编码器。
 
-初始 `vel_limit=2 turn/s` 只覆盖到 120 rpm。继续测试 300/600/1000 rpm 前，应逐级把限速设置为略高于目标值，例如：
+初始 `vel_limit=1 turn/s` 只覆盖到 60 rpm。继续测试 120/300/600/1000 rpm 前，应逐级把限速设置为略高于目标值，例如：
 
 ```python
+odrv0.axis1.controller.config.vel_limit = 3.0    # 测试 120 rpm
 odrv0.axis1.controller.config.vel_limit = 6.0    # 测试 300 rpm
 odrv0.axis1.controller.config.vel_limit = 11.0   # 测试 600 rpm
 odrv0.axis1.controller.config.vel_limit = 18.0   # 测试 1000 rpm
@@ -160,7 +187,7 @@ odrv0.axis1.controller.input_pos = odrv0.axis1.encoder.pos_estimate + 0.1
 - 电阻校准失败/电压不足：确认 24 V 母线、限流电源、电机接线和 `resistance_calib_max_voltage=6`；不得在未限流时提高电流参数。
 - 方向反：停止后检查电机相线和磁铁方向；必要时重新做方向搜索/编码器偏置校准，不要直接沿用旧 `direction`。
 - 高速抖动或电流异常：检查 `sample_age`、I²C 错误率、相位延迟补偿和磁铁同心度；先降低速度，稳定性不足时改用 SPI/ABI。
-- 总线卡死：固件会在不自动重新使能电机的前提下最多输出 9 个 SCL 恢复脉冲并重新初始化 I²C；错误保持锁存，必须人工清除故障并重新确认硬件。
+- 总线卡死：固件会在不自动重新使能电机的前提下最多输出 9 个 SCL 恢复脉冲并重新初始化 I²C；错误保持锁存，必须人工清除故障并重新确认硬件。多圈续接采用最近邻跨零，只有故障期间转子位移小于半圈时才唯一确定；若断电、惯性滑行或人工转动可能超过半圈，清错前必须重新回零或建立位置基准。
 
 停止电机命令：
 

@@ -257,6 +257,11 @@ bool Axis::run_lockin_spin(const LockinConfig_t &lockin_config, bool remain_arme
 bool Axis::start_closed_loop_control() {
     bool sensorless_mode = config_.enable_sensorless_mode;
 
+    if (!sensorless_mode && !encoder_.as5600_closed_loop_ready()) {
+        encoder_.set_error(Encoder::ERROR_NOT_READY);
+        return false;
+    }
+
     if (sensorless_mode) {
         // TODO: restart if desired
         if (!run_lockin_spin(config_.sensorless_ramp, true)) {
@@ -337,7 +342,8 @@ bool Axis::stop_closed_loop_control() {
 }
 
 bool Axis::run_closed_loop_control_loop() {
-    start_closed_loop_control();
+    if (!start_closed_loop_control())
+        return false;
     set_step_dir_active(config_.enable_step_dir);
 
     while ((requested_state_ == AXIS_STATE_UNDEFINED) && motor_.is_armed_) {
@@ -445,6 +451,7 @@ bool Axis::run_idle_loop() {
     mechanical_brake_.engage();
     set_step_dir_active(config_.enable_step_dir && config_.step_dir_always_on);
     while (requested_state_ == AXIS_STATE_UNDEFINED) {
+        encoder_.as5600_service_idle();
         motor_.setup();
         osDelay(1);
     }
@@ -574,6 +581,10 @@ void Axis::run_state_machine_loop() {
                 //    goto invalid_state_label;
                 if (!motor_.is_calibrated_ || (encoder_.config_.direction==0 && !config_.enable_sensorless_mode))
                     goto invalid_state_label;
+                if (!config_.enable_sensorless_mode && !encoder_.as5600_closed_loop_ready()) {
+                    encoder_.set_error(Encoder::ERROR_NOT_READY);
+                    goto invalid_state_label;
+                }
                 watchdog_feed();
                 status = run_closed_loop_control_loop();
             } break;

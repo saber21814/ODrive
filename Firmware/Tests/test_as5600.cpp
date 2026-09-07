@@ -50,4 +50,67 @@ TEST_SUITE("AS5600 helpers") {
         CHECK(!as5600::recovery_clocks_complete(8));
         CHECK(as5600::recovery_clocks_complete(9));
     }
+
+    TEST_CASE("seven angle slots are followed by one status slot") {
+        unsigned angle_slots = 0;
+        unsigned status_slots = 0;
+        for (uint8_t slot = 0; slot < 32; ++slot) {
+            if (as5600::transaction_is_status(slot)) {
+                ++status_slots;
+            } else {
+                ++angle_slots;
+            }
+        }
+        CHECK(angle_slots == 28);
+        CHECK(status_slots == 4);
+        CHECK(!as5600::transaction_is_status(6));
+        CHECK(as5600::transaction_is_status(7));
+        CHECK(!as5600::transaction_is_status(8));
+        CHECK(as5600::transaction_is_status(15));
+    }
+
+    TEST_CASE("recovery resumes the existing multi-turn coordinate") {
+        CHECK(as5600::resume_multiturn(8190, 2, 4094) == 8194);
+        CHECK(as5600::resume_multiturn(-8190, 4094, 2) == -8194);
+        CHECK(as5600::resume_multiturn(12345, 1000, 1000) == 12345);
+    }
+
+    TEST_CASE("transaction admission never enters HAL while unsafe") {
+        CHECK(as5600::transaction_can_start(false, false, false, true, false));
+        CHECK(!as5600::transaction_can_start(true, false, false, true, false));
+        CHECK(!as5600::transaction_can_start(false, true, false, true, false));
+        CHECK(!as5600::transaction_can_start(false, false, true, true, false));
+        CHECK(!as5600::transaction_can_start(false, false, false, false, false));
+        CHECK(!as5600::transaction_can_start(false, false, false, true, true));
+    }
+
+    TEST_CASE("recovery only runs disarmed with a valid axis") {
+        CHECK(as5600::recovery_can_run(true, true, false));
+        CHECK(!as5600::recovery_can_run(false, true, false));
+        CHECK(!as5600::recovery_can_run(true, false, false));
+        CHECK(!as5600::recovery_can_run(true, true, true));
+    }
+
+    TEST_CASE("three consecutive failures trigger and success clears") {
+        uint8_t failures = 0;
+        failures = as5600::update_failure_count(failures, false);
+        CHECK(failures == 1);
+        CHECK(!as5600::communication_failed(failures));
+        failures = as5600::update_failure_count(failures, false);
+        CHECK(failures == 2);
+        CHECK(!as5600::communication_failed(failures));
+        failures = as5600::update_failure_count(failures, false);
+        CHECK(failures == 3);
+        CHECK(as5600::communication_failed(failures));
+        failures = as5600::update_failure_count(failures, true);
+        CHECK(failures == 0);
+        CHECK(as5600::update_failure_count(UINT8_MAX, false) == UINT8_MAX);
+    }
+
+    TEST_CASE("status freshness uses a strict ten millisecond boundary") {
+        CHECK(!as5600::status_is_stale(180, 100));
+        CHECK(as5600::status_is_stale(181, 100));
+        CHECK(!as5600::status_is_stale(0x40, 0xfffffff0u));
+        CHECK(as5600::status_is_stale(0x41, 0xfffffff0u));
+    }
 }

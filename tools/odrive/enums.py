@@ -165,6 +165,7 @@ ENCODER_ERROR_ABS_SPI_NOT_READY          = 0x00000100
 ENCODER_ERROR_HALL_NOT_CALIBRATED_YET    = 0x00000200
 ENCODER_ERROR_ABS_I2C_COM_FAIL           = 0x00000400
 ENCODER_ERROR_ABS_I2C_MAGNET_ERROR       = 0x00000800
+ENCODER_ERROR_NOT_READY                  = 0x00001000
 
 # ODrive.SensorlessEstimator.Error
 SENSORLESS_ESTIMATOR_ERROR_NONE          = 0x00000000
@@ -317,6 +318,7 @@ class EncoderError(enum.IntFlag):
     HALL_NOT_CALIBRATED_YET                  = 0x00000200
     ABS_I2C_COM_FAIL                         = 0x00000400
     ABS_I2C_MAGNET_ERROR                     = 0x00000800
+    NOT_READY                                = 0x00001000
 class SensorlessEstimatorError(enum.IntFlag):
     NONE                                     = 0x00000000
     UNSTABLE_GAIN                            = 0x00000001

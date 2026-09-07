@@ -7,7 +7,7 @@
                 "${workspaceFolder}/ThirdParty/FreeRTOS/Source/portable/GCC/ARM_CM4F",
                 "${workspaceFolder}/fibre-cpp/include"
             ],
-            "compilerPath": "${ARM_GCC_ROOT}/bin/arm-none-eabi-g++.exe",
+            "compilerPath": "C:/Program Files/gcc-arm-none-eabi-7-2018-q2-update-win32/bin/arm-none-eabi-gcc.exe",
             "intelliSenseMode": "gcc-arm",
             "defines": [
                 "__arm__",
