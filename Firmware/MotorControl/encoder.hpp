@@ -205,6 +205,7 @@ public:
     uint32_t as5600_seen_error_seq_ = 0;
     uint8_t as5600_bad_magnet_count_ = 0;
     uint8_t as5600_poll_ticks_ = 0;
+    volatile uint8_t as5600_transaction_slot_ = 0;
     bool as5600_have_sample_ = false;
     bool as5600_first_sample_ = false;
     bool as5600_resume_after_recovery_ = false;

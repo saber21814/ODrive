@@ -211,17 +211,27 @@ void Encoder::as5600_rx_complete() {
     // The pending gate is released last so the priority-0 sampling ISR cannot
     // start another transfer while publication is only half complete.
     as5600_irq_consecutive_errors_ = 0;
+    bool completed_request = false;
 
     if (as5600_i2c_request_ == 1) {
         as5600_last_sample_tick_ = odrv.n_evt_sampling_;
         __DMB();
         ++as5600_sample_seq_;
+        completed_request = true;
     } else if (as5600_i2c_request_ == 2) {
         as5600_last_status_tick_ = odrv.n_evt_sampling_;
         as5600_have_status_ = true;
         __DMB();
         ++as5600_status_seq_;
+        completed_request = true;
     }
+
+    // Advance the 7-angle/1-status scheduler only after a successful
+    // completion. A busy/error STATUS remains the current logical slot,
+    // so the next free opportunity retries STATUS instead of starving it.
+    if (completed_request)
+        as5600_transaction_slot_ = as5600::transaction_slot_after_completion(
+            as5600_transaction_slot_, true);
 
     __DMB();
     ++as5600_complete_seq_;
@@ -847,11 +857,12 @@ void Encoder::sample_now() {
 #if HW_VERSION_MAJOR == 3
             if (!i2c1_as5600_master)
                 break;
-            // One transaction slot every 250 us: seven RAW ANGLE reads then
-            // one STATUS read. This yields 3.5 kHz angle and 500 Hz status
-            // requests without placing STATUS immediately behind each angle.
+            // Offer one transaction opportunity every 250 us. The logical
+            // 7-angle/1-status slot advances only after successful completion.
+            // This preserves STATUS service under I2C backpressure with the I2C
+            // IRQ below the FOC ControlLoop priority.
             if ((as5600_poll_ticks_ & 1u) == 0u) {
-                const uint8_t slot = (uint8_t)(as5600_poll_ticks_ >> 1);
+                const uint8_t slot = as5600_transaction_slot_;
                 if (as5600::transaction_is_status(slot)) {
                     as5600_start_read(0x0b, (uint8_t*)as5600_status_buf_, 1, 2);
                 } else {

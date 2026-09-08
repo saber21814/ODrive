@@ -98,6 +98,11 @@ inline bool transaction_is_status(uint8_t slot) {
     return (slot & 7u) == 7u;
 }
 
+inline uint8_t transaction_slot_after_completion(uint8_t slot, bool success) {
+    // A failed or merely attempted transfer must be retried in the same slot.
+    return success ? (uint8_t)(slot + 1u) : slot;
+}
+
 inline bool transaction_can_start(bool pending, bool recovery_requested,
                                   bool recovery_blocked, bool hal_ready,
                                   bool bus_busy) {

@@ -69,6 +69,36 @@ TEST_SUITE("AS5600 helpers") {
         CHECK(as5600::transaction_is_status(15));
     }
 
+    TEST_CASE("transaction slot advances only after successful completion") {
+        uint8_t slot = 7;
+        CHECK(as5600::transaction_is_status(slot));
+        slot = as5600::transaction_slot_after_completion(slot, false);
+        CHECK(slot == 7);
+        CHECK(as5600::transaction_is_status(slot));
+        slot = as5600::transaction_slot_after_completion(slot, true);
+        CHECK(slot == 8);
+        CHECK(!as5600::transaction_is_status(slot));
+        CHECK(as5600::transaction_slot_after_completion(255, true) == 0);
+    }
+
+    TEST_CASE("failed status completion cannot be starved by angle slots") {
+        uint8_t slot = 0;
+        for (unsigned i = 0; i < 7; ++i) {
+            CHECK(!as5600::transaction_is_status(slot));
+            slot = as5600::transaction_slot_after_completion(slot, true);
+        }
+        CHECK(slot == 7);
+        CHECK(as5600::transaction_is_status(slot));
+        for (unsigned retry = 0; retry < 5; ++retry) {
+            slot = as5600::transaction_slot_after_completion(slot, false);
+            CHECK(slot == 7);
+            CHECK(as5600::transaction_is_status(slot));
+        }
+        slot = as5600::transaction_slot_after_completion(slot, true);
+        CHECK(slot == 8);
+        CHECK(!as5600::transaction_is_status(slot));
+    }
+
     TEST_CASE("recovery resumes the existing multi-turn coordinate") {
         CHECK(as5600::resume_multiturn(8190, 2, 4094) == 8194);
         CHECK(as5600::resume_multiturn(-8190, 4094, 2) == -8194);
