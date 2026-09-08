@@ -133,9 +133,11 @@ TEST_SUITE("AS5600 helpers") {
 
     TEST_CASE("plausibility threshold has an absolute anti-glitch cap") {
         CHECK(as5600::max_plausible_raw_delta(
-                  as5600::STALE_TICKS, 1.0f / 8000.0f, 20.0f) == 192);
+                  as5600::STALE_TICKS, 1.0f / 8000.0f, 20.0f) == 209);
         CHECK(as5600::max_plausible_raw_delta(
-                  UINT32_MAX, 1.0f / 8000.0f, 30.0f) == 192);
+                  as5600::STALE_TICKS, 1.0f / 8000.0f, 30.0f) == 312);
+        CHECK(as5600::max_plausible_raw_delta(
+                  UINT32_MAX, 1.0f / 8000.0f, 30.0f) == 320);
     }
 
     TEST_CASE("zero crossing remains plausible") {
@@ -224,4 +226,29 @@ TEST_SUITE("AS5600 helpers") {
         CHECK(!as5600::recovery_attempt_due(state, 0xfffffffeu));
         CHECK(as5600::recovery_attempt_due(state, 2));
     }
+    TEST_CASE("recovery re-anchor accepts large legal motion and invalidates multi-turn") {
+        auto r = as5600::recovery_reanchor(5000, 1300, 1000);
+        CHECK(r.raw_delta == 300);
+        CHECK(r.resumed_shadow == 5300);
+        CHECK(!r.multiturn_valid);
+    }
+
+    TEST_CASE("recovery re-anchor crosses the AS5600 zero boundary") {
+        auto r = as5600::recovery_reanchor(8191, 2, 4095);
+        CHECK(r.raw_delta == 3);
+        CHECK(r.resumed_shadow == 8194);
+        CHECK(!r.multiturn_valid);
+    }
+
+    TEST_CASE("recovery movement beyond half a turn is explicitly ambiguous") {
+        // From 1000 to 3500 the AS5600 alone cannot distinguish +2500 counts
+        // from the nearer -1596-count path. Preserve the nearest path but mark
+        // multi-turn state invalid so an application cannot mistake it for an
+        // absolute multi-turn reconstruction.
+        auto r = as5600::recovery_reanchor(10000, 3500, 1000);
+        CHECK(r.raw_delta == -1596);
+        CHECK(r.resumed_shadow == 8404);
+        CHECK(!r.multiturn_valid);
+    }
+
 }

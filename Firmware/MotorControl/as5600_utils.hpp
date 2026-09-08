@@ -16,7 +16,7 @@ static constexpr uint32_t RECOVERY_BASE_COOLDOWN_TICKS = 800; // 100 ms at 8 kHz
 static constexpr uint32_t RECOVERY_MAX_COOLDOWN_TICKS = 8000; // 1 s at 8 kHz
 static constexpr float PLAUSIBILITY_SPEED_MARGIN = 1.25f;
 static constexpr uint32_t PLAUSIBILITY_COUNT_MARGIN = 4;
-static constexpr uint32_t PLAUSIBILITY_ABSOLUTE_MAX_DELTA = 192;
+static constexpr uint32_t PLAUSIBILITY_ABSOLUTE_MAX_DELTA = 320;
 
 struct SamplePlausibility {
     int32_t raw_delta;
@@ -29,6 +29,12 @@ struct RecoveryState {
     bool blocked;
     uint8_t attempts;
     uint32_t next_tick;
+};
+
+struct RecoveryReanchor {
+    int32_t raw_delta;
+    int32_t resumed_shadow;
+    bool multiturn_valid;
 };
 
 inline uint16_t decode_raw_angle(uint8_t msb, uint8_t lsb) {
@@ -46,8 +52,10 @@ inline uint32_t max_plausible_raw_delta(uint32_t elapsed_ticks,
                                         float tick_period,
                                         float max_mechanical_speed) {
     // A 25% speed allowance plus four counts covers transaction jitter and
-    // AS5600 quantization. The absolute cap still accepts 1000 rpm after a
-    // near-stale 2 ms gap, but never admits a hundreds/thousands-count jump.
+    // AS5600 quantization. The 320-count absolute cap is high enough for the
+    // configured 30 turn/s maximum across the full 2 ms freshness window,
+    // while shorter normal sample intervals are still constrained by the much
+    // tighter dynamic speed-based limit.
     float limit = max_mechanical_speed * (float)CPR *
                   (float)elapsed_ticks * tick_period *
                   PLAUSIBILITY_SPEED_MARGIN;
@@ -170,6 +178,16 @@ inline bool status_is_stale(uint32_t now_tick, uint32_t status_tick) {
 
 inline int32_t resume_multiturn(int32_t shadow, uint16_t raw, uint16_t old_raw) {
     return shadow + wrapped_delta(raw, old_raw);
+}
+
+inline RecoveryReanchor recovery_reanchor(int32_t shadow, uint16_t raw,
+                                           uint16_t old_raw) {
+    const int32_t delta = wrapped_delta(raw, old_raw);
+    // The nearest single-turn displacement is the only observable quantity.
+    // Any full turns during the communication gap are fundamentally
+    // ambiguous with a single-turn AS5600, so software multi-turn validity
+    // must be cleared even though the nearest-path coordinate is preserved.
+    return {delta, shadow + delta, false};
 }
 
 inline uint16_t configure_conf(uint16_t conf) {

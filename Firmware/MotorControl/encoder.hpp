@@ -56,6 +56,18 @@ public:
         void set_find_idx_on_lockin_only(bool value) { find_idx_on_lockin_only = value; parent->set_idx_subscribe(); }
         void set_abs_spi_cs_gpio_pin(uint16_t value) { abs_spi_cs_gpio_pin = value; parent->abs_spi_cs_pin_init(); }
         void set_pre_calibrated(bool value) { pre_calibrated = value; parent->check_pre_calibrated(); }
+        // The calibration version is a firmware-owned safety token. External
+        // clients may clear it to force recalibration, but may never set a
+        // nonzero value and bypass the AS5600 offset-calibration gate. NVM
+        // loading and the internal calibration routine write the field directly.
+        void set_as5600_calibration_version(uint8_t value) {
+            if (value == 0) {
+                as5600_calibration_version = 0;
+                pre_calibrated = false;
+                if (parent && parent->mode_ == MODE_I2C_ABS_AS5600)
+                    parent->is_ready_ = false;
+            }
+        }
         void set_bandwidth(float value) { bandwidth = value; parent->update_pll_gains(); }
     };
 
@@ -127,6 +139,9 @@ public:
     float as5600_angle_sample_rate_ = 0.0f;
     float as5600_status_sample_rate_ = 0.0f;
     uint32_t as5600_busy_skip_count_ = 0;
+    uint32_t as5600_pending_skip_count_ = 0;
+    uint32_t as5600_reanchor_count_ = 0;
+    bool as5600_multiturn_valid_ = false;
     uint8_t as5600_consecutive_errors_ = 0;
     uint16_t last_accepted_raw_ = 0;
     uint32_t last_accepted_tick_ = 0;
@@ -178,6 +193,7 @@ public:
     volatile uint32_t as5600_failed_seq_ = 0;
     volatile uint32_t as5600_error_seq_ = 0;
     volatile uint32_t as5600_busy_skip_seq_ = 0;
+    volatile uint32_t as5600_pending_skip_seq_ = 0;
     volatile uint32_t as5600_last_sample_tick_ = 0;
     volatile uint32_t as5600_last_status_tick_ = 0;
     volatile bool as5600_have_status_ = false;
