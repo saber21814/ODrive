@@ -1,0 +1,97 @@
+diff --git a/Firmware/MotorControl/as5600_utils.hpp b/Firmware/MotorControl/as5600_utils.hpp
+index 21e0ea3..5fd5df6 100644
+--- a/Firmware/MotorControl/as5600_utils.hpp
++++ b/Firmware/MotorControl/as5600_utils.hpp
+@@ -16,7 +16,7 @@ static constexpr uint32_t RECOVERY_BASE_COOLDOWN_TICKS = 800; // 100 ms at 8 kHz
+ static constexpr uint32_t RECOVERY_MAX_COOLDOWN_TICKS = 8000; // 1 s at 8 kHz
+ static constexpr float PLAUSIBILITY_SPEED_MARGIN = 1.25f;
+ static constexpr uint32_t PLAUSIBILITY_COUNT_MARGIN = 4;
+-static constexpr uint32_t PLAUSIBILITY_ABSOLUTE_MAX_DELTA = 192;
++static constexpr uint32_t PLAUSIBILITY_ABSOLUTE_MAX_DELTA = 320;
+ 
+ struct SamplePlausibility {
+     int32_t raw_delta;
+@@ -31,6 +31,12 @@ struct RecoveryState {
+     uint32_t next_tick;
+ };
+ 
++struct RecoveryReanchor {
++    int32_t raw_delta;
++    int32_t resumed_shadow;
++    bool multiturn_valid;
++};
++
+ inline uint16_t decode_raw_angle(uint8_t msb, uint8_t lsb) {
+     return (uint16_t)(((uint16_t)(msb & 0x0f) << 8) | lsb);
+ }
+@@ -46,8 +52,10 @@ inline uint32_t max_plausible_raw_delta(uint32_t elapsed_ticks,
+                                         float tick_period,
+                                         float max_mechanical_speed) {
+     // A 25% speed allowance plus four counts covers transaction jitter and
+-    // AS5600 quantization. The absolute cap still accepts 1000 rpm after a
+-    // near-stale 2 ms gap, but never admits a hundreds/thousands-count jump.
++    // AS5600 quantization. The 320-count absolute cap is high enough for the
++    // configured 30 turn/s maximum across the full 2 ms freshness window,
++    // while shorter normal sample intervals are still constrained by the much
++    // tighter dynamic speed-based limit.
+     float limit = max_mechanical_speed * (float)CPR *
+                   (float)elapsed_ticks * tick_period *
+                   PLAUSIBILITY_SPEED_MARGIN;
+@@ -172,6 +180,16 @@ inline int32_t resume_multiturn(int32_t shadow, uint16_t raw, uint16_t old_raw) {
+     return shadow + wrapped_delta(raw, old_raw);
+ }
+ 
++inline RecoveryReanchor recovery_reanchor(int32_t shadow, uint16_t raw,
++                                           uint16_t old_raw) {
++    const int32_t delta = wrapped_delta(raw, old_raw);
++    // The nearest single-turn displacement is the only observable quantity.
++    // Any full turns during the communication gap are fundamentally
++    // ambiguous with a single-turn AS5600, so software multi-turn validity
++    // must be cleared even though the nearest-path coordinate is preserved.
++    return {delta, shadow + delta, false};
++}
++
+ inline uint16_t configure_conf(uint16_t conf) {
+     // Preserve HYST, OUTS and PWMF. Only volatile runtime controls are changed.
+     constexpr uint16_t clear_mask = (uint16_t)((3u << 0) | (3u << 8) |
+diff --git a/Firmware/MotorControl/encoder.hpp b/Firmware/MotorControl/encoder.hpp
+index 8c1c6cb..742e545 100644
+--- a/Firmware/MotorControl/encoder.hpp
++++ b/Firmware/MotorControl/encoder.hpp
+@@ -56,6 +56,18 @@ public:
+         void set_find_idx_on_lockin_only(bool value) { find_idx_on_lockin_only = value; parent->set_idx_subscribe(); }
+         void set_abs_spi_cs_gpio_pin(uint16_t value) { abs_spi_cs_gpio_pin = value; parent->abs_spi_cs_pin_init(); }
+         void set_pre_calibrated(bool value) { pre_calibrated = value; parent->check_pre_calibrated(); }
++        // The calibration version is a firmware-owned safety token. External
++        // clients may clear it to force recalibration, but may never set a
++        // nonzero value and bypass the AS5600 offset-calibration gate. NVM
++        // loading and the internal calibration routine write the field directly.
++        void set_as5600_calibration_version(uint8_t value) {
++            if (value == 0) {
++                as5600_calibration_version = 0;
++                pre_calibrated = false;
++                if (parent && parent->mode_ == MODE_I2C_ABS_AS5600)
++                    parent->is_ready_ = false;
++            }
++        }
+         void set_bandwidth(float value) { bandwidth = value; parent->update_pll_gains(); }
+     };
+ 
+@@ -127,6 +139,9 @@ public:
+     float as5600_angle_sample_rate_ = 0.0f;
+     float as5600_status_sample_rate_ = 0.0f;
+     uint32_t as5600_busy_skip_count_ = 0;
++    uint32_t as5600_pending_skip_count_ = 0;
++    uint32_t as5600_reanchor_count_ = 0;
++    bool as5600_multiturn_valid_ = false;
+     uint8_t as5600_consecutive_errors_ = 0;
+     uint16_t last_accepted_raw_ = 0;
+     uint32_t last_accepted_tick_ = 0;
+@@ -178,6 +193,7 @@ public:
+     volatile uint32_t as5600_failed_seq_ = 0;
+     volatile uint32_t as5600_error_seq_ = 0;
+     volatile uint32_t as5600_busy_skip_seq_ = 0;
++    volatile uint32_t as5600_pending_skip_seq_ = 0;
+     volatile uint32_t as5600_last_sample_tick_ = 0;
+     volatile uint32_t as5600_last_status_tick_ = 0;
+     volatile bool as5600_have_status_ = false;
