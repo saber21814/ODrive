@@ -54,6 +54,7 @@ enc.use_index = False
 enc.bandwidth = 300
 enc.pre_calibrated = False
 enc.phase_delay_compensation = 0.0004   # s，允许范围 0..0.005
+enc.as5600_max_mechanical_speed = 20.0  # turn/s，1200 rpm；覆盖1000 rpm测试并留裕量
 
 odrv0.axis1.motor.config.motor_type = MOTOR_TYPE_HIGH_CURRENT
 odrv0.axis1.motor.config.pole_pairs = 11
@@ -90,6 +91,8 @@ odrv0 = odrive.find_any()
 
 固件启动时会对 AS5600 的 `CONF(0x07/0x08)` 做易失读改写：正常功耗、watchdog 关闭、`SF=11`、低阈值快速滤波；只读回验证，不写 `OTP 0xFF`。运行时采用 7 个角度事务加 1 个状态事务的公平调度，目标角度有效率约 3.5 kHz、状态有效率约 500 Hz。
 
+AS5600 模式的换相相位由编码器 PLL 的连续预测位置生成，并叠加 `phase_delay_compensation` 固定传感器延迟补偿，避免直接使用 3.5 kHz 阶梯位置加 0..1 count 插值。该分支只作用于 AS5600；官方 ABI、Hall、SPI 编码器路径和速度环算法保持不变。
+
 ## 4. 必须按顺序执行的校准
 
 1. 只接逻辑电源时，用下面命令读取诊断量。缓慢转轴一圈并反向转回，观察 `pos_abs`/`shadow_count`：一机械圈必须对应一次 0..4095 完整周期，`shadow_count` 跨零时应连续增减。若一圈重复多次，原电机磁环不是 AS5600 所需的单对极磁铁，停止后续校准。
@@ -99,10 +102,12 @@ enc1 = odrv0.axis1.encoder
 print(enc1.as5600_status, enc1.i2c_error_rate, enc1.sample_age)
 print(enc1.as5600_angle_sample_rate, enc1.as5600_status_sample_rate)
 print(enc1.as5600_busy_skip_count, enc1.as5600_consecutive_errors)
+print(enc1.last_accepted_raw, enc1.last_accepted_tick)
+print(enc1.raw_delta, enc1.max_abs_raw_delta, enc1.rejected_sample_count)
 print(enc1.pos_abs, enc1.shadow_count, enc1.error)
 dump_errors(odrv0)
 ```
-2. 确认 `sample_age < 0.002`、I²C 错误率接近 0，且没有 `ABS_I2C_COM_FAIL`/`ABS_I2C_MAGNET_ERROR`。
+2. 确认 `sample_age < 0.002`、I²C 错误率接近 0、`rejected_sample_count` 不持续增长，且没有 `ABS_I2C_COM_FAIL`/`ABS_I2C_MAGNET_ERROR`/`ABS_I2C_INVALID_SAMPLE`。`max_abs_raw_delta` 按实际样本间隔动态计算，并有 192 count 绝对硬上限；被拒绝的跳变不会进入 `pos_abs`、多圈计数或 PLL。`as5600_max_mechanical_speed` 有效范围为 `>0..30 turn/s`，本电机保持建议值 `20.0`，不要为绕过故障而调大。
 3. 功率级接 24 V 限流电源，首次空载或轻载。执行电机校准：
 
 ```python
@@ -187,7 +192,8 @@ odrv0.axis1.controller.input_pos = odrv0.axis1.encoder.pos_estimate + 0.1
 - 电阻校准失败/电压不足：确认 24 V 母线、限流电源、电机接线和 `resistance_calib_max_voltage=6`；不得在未限流时提高电流参数。
 - 方向反：停止后检查电机相线和磁铁方向；必要时重新做方向搜索/编码器偏置校准，不要直接沿用旧 `direction`。
 - 高速抖动或电流异常：检查 `sample_age`、I²C 错误率、相位延迟补偿和磁铁同心度；先降低速度，稳定性不足时改用 SPI/ABI。
-- 总线卡死：固件会在不自动重新使能电机的前提下最多输出 9 个 SCL 恢复脉冲并重新初始化 I²C；错误保持锁存，必须人工清除故障并重新确认硬件。多圈续接采用最近邻跨零，只有故障期间转子位移小于半圈时才唯一确定；若断电、惯性滑行或人工转动可能超过半圈，清错前必须重新回零或建立位置基准。
+- `ABS_I2C_INVALID_SAMPLE`：连续三个 RAW ANGLE 样本超过物理速度阈值。先停机检查磁铁同心度、供电和 I²C 波形；不要通过把 `as5600_max_mechanical_speed` 设得很大来掩盖数百/数千 count 的瞬跳。
+- 总线卡死：固件会在不自动重新使能电机的前提下输出 9 个 SCL 恢复脉冲并重新初始化 I²C。恢复失败后保留恢复请求，按有界退避冷却再次尝试，不会形成必须重启才能解除的内部死锁；错误仍保持锁存，必须人工清除并重新确认硬件。多圈续接采用最近邻跨零，只有故障期间转子位移小于半圈时才唯一确定；若断电、惯性滑行或人工转动可能超过半圈，清错前必须重新回零或建立位置基准。
 
 停止电机命令：
 

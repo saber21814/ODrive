@@ -195,6 +195,7 @@ enum EncoderError {
     ENCODER_ERROR_ABS_I2C_COM_FAIL           = 0x00000400,
     ENCODER_ERROR_ABS_I2C_MAGNET_ERROR       = 0x00000800,
     ENCODER_ERROR_NOT_READY                  = 0x00001000,
+    ENCODER_ERROR_ABS_I2C_INVALID_SAMPLE     = 0x00002000,
 };
 
 // ODrive.SensorlessEstimator.Error

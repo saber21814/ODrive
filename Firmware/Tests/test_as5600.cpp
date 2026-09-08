@@ -113,4 +113,115 @@ TEST_SUITE("AS5600 helpers") {
         CHECK(!as5600::status_is_stale(0x40, 0xfffffff0u));
         CHECK(as5600::status_is_stale(0x41, 0xfffffff0u));
     }
+
+    TEST_CASE("normal maximum-speed samples are physically plausible") {
+        // 1000 rpm is 16.67 turn/s: 34 counts in 500 us is expected.
+        auto result = as5600::check_sample(1034, 1000, 104, 100,
+                                           1.0f / 8000.0f, 20.0f);
+        CHECK(result.raw_delta == 34);
+        CHECK(result.max_abs_raw_delta == 56);
+        CHECK(result.accepted);
+    }
+
+    TEST_CASE("a single large angle jump is rejected") {
+        auto result = as5600::check_sample(1500, 1000, 102, 100,
+                                           1.0f / 8000.0f, 20.0f);
+        CHECK(result.raw_delta == 500);
+        CHECK(result.max_abs_raw_delta == 30);
+        CHECK(!result.accepted);
+    }
+
+    TEST_CASE("plausibility threshold has an absolute anti-glitch cap") {
+        CHECK(as5600::max_plausible_raw_delta(
+                  as5600::STALE_TICKS, 1.0f / 8000.0f, 20.0f) == 192);
+        CHECK(as5600::max_plausible_raw_delta(
+                  UINT32_MAX, 1.0f / 8000.0f, 30.0f) == 192);
+    }
+
+    TEST_CASE("zero crossing remains plausible") {
+        auto result = as5600::check_sample(0, 4095, 102, 100,
+                                           1.0f / 8000.0f, 20.0f);
+        CHECK(result.raw_delta == 1);
+        CHECK(result.accepted);
+    }
+
+    TEST_CASE("consecutive implausible samples reach the fault threshold") {
+        uint8_t rejected = 0;
+        for (uint8_t i = 0; i < as5600::MAX_CONSECUTIVE_REJECTED_SAMPLES; ++i) {
+            auto result = as5600::check_sample((uint16_t)(1500 + i), 1000,
+                                               (uint32_t)(102 + i), 100,
+                                               1.0f / 8000.0f, 20.0f);
+            REQUIRE(!result.accepted);
+            rejected = as5600::update_failure_count(rejected, result.accepted);
+        }
+        CHECK(as5600::sample_rejection_failed(rejected));
+    }
+
+    TEST_CASE("plausibility timing handles uint32 tick wraparound") {
+        auto result = as5600::check_sample(1034, 1000, 2, 0xfffffffeu,
+                                           1.0f / 8000.0f, 20.0f);
+        CHECK(result.max_abs_raw_delta == 56);
+        CHECK(result.accepted);
+    }
+
+    TEST_CASE("successful recovery clears both recovery gates") {
+        as5600::RecoveryState state = {true, true, 2, 1234};
+        state = as5600::recovery_after_attempt(state, true, 2000);
+        CHECK(!state.requested);
+        CHECK(!state.blocked);
+        CHECK(state.attempts == 0);
+    }
+
+    TEST_CASE("mismatched recovery gates are normalized and runnable") {
+        as5600::RecoveryState state = {true, false, 0, 0};
+        state = as5600::request_recovery(state, 500);
+        CHECK(state.requested);
+        CHECK(state.blocked);
+        CHECK(state.attempts == 0);
+        CHECK(as5600::recovery_attempt_due(state, 500));
+
+        state = {false, true, 4, 900};
+        state = as5600::request_recovery(state, 600);
+        CHECK(state.requested);
+        CHECK(state.blocked);
+        CHECK(state.attempts == 0);
+        CHECK(as5600::recovery_attempt_due(state, 600));
+    }
+
+    TEST_CASE("PLL feedback is gated by accepted samples and interval is bounded") {
+        constexpr float dt = 1.0f / 8000.0f;
+        CHECK(as5600::pll_feedback_period(false, 4, dt) == 0.0f);
+        CHECK(as5600::pll_feedback_period(true, 4, dt) ==
+              doctest::Approx(4.0f * dt));
+        CHECK(as5600::pll_feedback_period(true, as5600::STALE_TICKS + 100u, dt) ==
+              doctest::Approx((float)as5600::STALE_TICKS * dt));
+    }
+
+    TEST_CASE("failed recovery is retryable after cooldown and clear") {
+        as5600::RecoveryState state = {true, true, 0, 100};
+        state = as5600::recovery_after_attempt(state, false, 100);
+        CHECK(state.requested);
+        CHECK(state.blocked);
+        CHECK(!as5600::recovery_attempt_due(state, state.next_tick - 1));
+        CHECK(as5600::recovery_attempt_due(state, state.next_tick));
+
+        for (uint8_t i = state.attempts;
+             i < as5600::MAX_RECOVERY_ATTEMPTS; ++i) {
+            state = as5600::recovery_after_attempt(state, false,
+                                                   state.next_tick);
+        }
+        CHECK(!as5600::recovery_attempt_due(state, state.next_tick));
+        state = as5600::rearm_recovery_after_clear(state, true,
+                                                   state.next_tick);
+        CHECK(state.requested);
+        CHECK(state.blocked);
+        CHECK(state.attempts == 0);
+        CHECK(as5600::recovery_attempt_due(state, state.next_tick));
+    }
+
+    TEST_CASE("recovery deadline comparison handles uint32 tick wraparound") {
+        as5600::RecoveryState state = {true, true, 1, 2};
+        CHECK(!as5600::recovery_attempt_due(state, 0xfffffffeu));
+        CHECK(as5600::recovery_attempt_due(state, 2));
+    }
 }

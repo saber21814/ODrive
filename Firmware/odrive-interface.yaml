@@ -1252,6 +1252,8 @@ interfaces:
             doc: AS5600 no longer detects the magnet (STATUS.MD is clear).
           NOT_READY:
             doc: Encoder feedback is not ready for closed-loop control.
+          ABS_I2C_INVALID_SAMPLE:
+            doc: AS5600 RAW ANGLE changed faster than the configured physical speed limit.
       is_ready: readonly bool
       index_found: readonly bool
       shadow_count: 
@@ -1316,6 +1318,23 @@ interfaces:
       as5600_consecutive_errors:
         type: readonly uint8
         doc: Current count of consecutive AS5600 I2C transaction errors.
+      last_accepted_raw:
+        type: readonly uint16
+        doc: Most recent AS5600 RAW ANGLE sample accepted by the physical plausibility check.
+      last_accepted_tick:
+        type: readonly uint32
+        doc: 8 kHz sampling tick at which the most recent plausible AS5600 angle was accepted.
+      raw_delta:
+        type: readonly int32
+        unit: counts
+        doc: Wrapped delta of the most recently evaluated AS5600 RAW ANGLE sample.
+      max_abs_raw_delta:
+        type: readonly uint32
+        unit: counts
+        doc: Dynamic absolute RAW ANGLE delta limit used for the most recent plausibility check.
+      rejected_sample_count:
+        type: readonly uint32
+        doc: Total AS5600 RAW ANGLE samples rejected as physically implausible since boot.
       i2c_error_rate: readonly float32
       sample_age:
         type: readonly float32
@@ -1353,6 +1372,11 @@ interfaces:
             unit: seconds
             default: 0.0004
             doc: Delay compensation used only by the AS5600 I2C absolute encoder.
+          as5600_max_mechanical_speed:
+            type: float32
+            unit: turn/s
+            default: 20.0
+            doc: Maximum physically plausible AS5600 mechanical speed (valid range above 0 through 30 turn/s). The firmware adds timing and quantization margin, with a 192-count absolute anti-glitch cap.
           as5600_calibration_version:
             type: uint8
             default: 0

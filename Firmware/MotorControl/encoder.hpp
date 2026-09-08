@@ -40,6 +40,7 @@ public:
         bool find_idx_on_lockin_only = false; // Only be sensitive during lockin scan constant vel state
         bool ignore_illegal_hall_state = false; // dont error on bad states like 000 or 111
         float phase_delay_compensation = 0.0004f; // AS5600 I2C pipeline delay [s]
+        float as5600_max_mechanical_speed = 20.0f; // physical plausibility limit [turn/s]
         uint8_t as5600_calibration_version = 0;
         uint8_t hall_polarity = 0;
         bool hall_polarity_calibrated = false;
@@ -127,6 +128,11 @@ public:
     float as5600_status_sample_rate_ = 0.0f;
     uint32_t as5600_busy_skip_count_ = 0;
     uint8_t as5600_consecutive_errors_ = 0;
+    uint16_t last_accepted_raw_ = 0;
+    uint32_t last_accepted_tick_ = 0;
+    int32_t raw_delta_ = 0;
+    uint32_t max_abs_raw_delta_ = 0;
+    uint32_t rejected_sample_count_ = 0;
 
     OutputPort<float> pos_estimate_ = 0.0f; // [turn]
     OutputPort<float> vel_estimate_ = 0.0f; // [turn/s]
@@ -190,6 +196,9 @@ public:
     volatile bool as5600_recovery_blocked_ = false;
     volatile bool as5600_recovery_requested_ = false;
     volatile uint8_t as5600_irq_consecutive_errors_ = 0;
+    uint8_t as5600_consecutive_rejected_samples_ = 0;
+    uint8_t as5600_recovery_attempts_ = 0;
+    uint32_t as5600_recovery_next_tick_ = 0;
     uint32_t as5600_rate_tick_ = 0;
     uint32_t as5600_rate_angle_seq_ = 0;
     uint32_t as5600_rate_status_seq_ = 0;
