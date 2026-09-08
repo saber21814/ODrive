@@ -1,0 +1,42 @@
+name: Apply AS5600 scheduler fix
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'tools/as5600-scheduler-fix.patch'
+      - '.github/workflows/apply-as5600-scheduler-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Apply scheduler patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check tools/as5600-scheduler-fix.patch
+          git apply tools/as5600-scheduler-fix.patch
+          git diff --check
+
+      - name: Commit source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f tools/as5600-scheduler-fix.patch
+          rm -f .github/workflows/apply-as5600-scheduler-fix.yml
+          git config user.name "AS5600 scheduler bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix AS5600 status starvation under I2C backpressure"
+          git push origin HEAD:master
