@@ -1,4 +1,15 @@
 {
+    "C_Cpp.default.configurationProvider": "",
+    "C_Cpp.default.compilerPath": "C:/Program Files/gcc-arm-none-eabi-7-2018-q2-update-win32/bin/arm-none-eabi-g++.exe",
+    "C_Cpp.default.intelliSenseMode": "windows-gcc-arm",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}",
+        "${workspaceFolder}/Board/v3",
+        "${workspaceFolder}/Board/v3/Inc",
+        "${workspaceFolder}/MotorControl",
+        "${workspaceFolder}/fibre-cpp/include",
+        "${workspaceFolder}/**"
+    ],
     "C_Cpp.intelliSenseEngine": "Default",
     "C_Cpp.intelliSenseEngineFallback": "Disabled",
     "files.associations": {

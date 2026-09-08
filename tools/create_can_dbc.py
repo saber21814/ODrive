@@ -17,7 +17,21 @@ except ModuleNotFoundError as ex:
             'python -m pip install cantools') from ex
     raise
 
-from odrive.enums import *
+# DBC generation only needs the generated enums, not odrive.__init__ and its
+# USB/terminal dependencies. Load the local file without initializing the package.
+import importlib.util
+_enum_spec = importlib.util.spec_from_file_location(
+    '_odrive_dbc_enums', Path(__file__).resolve().parent / 'odrive' / 'enums.py')
+_enums = importlib.util.module_from_spec(_enum_spec)
+_enum_spec.loader.exec_module(_enums)
+AxisError = _enums.AxisError
+AxisState = _enums.AxisState
+MotorError = _enums.MotorError
+EncoderError = _enums.EncoderError
+SensorlessEstimatorError = _enums.SensorlessEstimatorError
+ControlMode = _enums.ControlMode
+InputMode = _enums.InputMode
+ControllerError = _enums.ControllerError
 
 # cantools 39+ moved the legacy Signal scale/offset/choices arguments into a
 # conversion object. Keep this ODrive 0.5.6 generator usable with both APIs.
