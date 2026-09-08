@@ -1,0 +1,279 @@
+diff --git a/Firmware/MotorControl/encoder.cpp b/Firmware/MotorControl/encoder.cpp
+index 1eb3377..7464ea0 100644
+--- a/Firmware/MotorControl/encoder.cpp
++++ b/Firmware/MotorControl/encoder.cpp
+@@ -172,9 +172,12 @@ bool Encoder::as5600_start_read(uint8_t reg, uint8_t* buf, uint16_t len, uint8_t
+                                        as5600_recovery_requested_,
+                                        as5600_recovery_blocked_,
+                                        hal_ready, bus_busy)) {
+-        if (!as5600_i2c_pending_ && !as5600_recovery_requested_ &&
+-            !as5600_recovery_blocked_ && (!hal_ready || bus_busy))
+-            as5600_busy_skip_seq_++;
++        if (as5600_i2c_pending_) {
++            ++as5600_pending_skip_seq_;
++        } else if (!as5600_recovery_requested_ && !as5600_recovery_blocked_ &&
++                   (!hal_ready || bus_busy)) {
++            ++as5600_busy_skip_seq_;
++        }
+         return false;
+     }
+     // HAL_I2C_Mem_Read_IT() contains a blocking BUSY wait before it starts the
+@@ -184,7 +187,9 @@ bool Encoder::as5600_start_read(uint8_t reg, uint8_t* buf, uint16_t len, uint8_t
+     as5600_i2c_pending_ = 1;
+     if (HAL_I2C_Mem_Read_IT(&hi2c1, 0x36 << 1, reg, I2C_MEMADD_SIZE_8BIT,
+                             buf, len) != HAL_OK) {
+-        as5600_i2c_pending_ = 0;
++        // Publish the complete failure state before releasing the pending gate.
++        // This call executes in the priority-0 sampling ISR, so the ordering is
++        // also consistent with the asynchronous I2C error callback below.
+         as5600_note_i2c_failure();
+         return false;
+     }
+@@ -200,40 +205,54 @@ bool Encoder::as5600_start_read(uint8_t reg, uint8_t* buf, uint16_t len, uint8_t
+ 
+ void Encoder::as5600_rx_complete() {
+ #if HW_VERSION_MAJOR == 3
+-    // The ISR is deliberately limited to publishing the completed transaction.
++    // I2C IRQ priority is lower than ControlLoop. Therefore ControlLoop may
++    // preempt this callback at any instruction. Publish payload/state first,
++    // then the per-kind sequence marker, then the transaction commit marker.
++    // The pending gate is released last so the priority-0 sampling ISR cannot
++    // start another transfer while publication is only half complete.
++    as5600_irq_consecutive_errors_ = 0;
++
+     if (as5600_i2c_request_ == 1) {
+         as5600_last_sample_tick_ = odrv.n_evt_sampling_;
+         __DMB();
+-        as5600_sample_seq_++;
+-    }
+-    if (as5600_i2c_request_ == 2) {
++        ++as5600_sample_seq_;
++    } else if (as5600_i2c_request_ == 2) {
+         as5600_last_status_tick_ = odrv.n_evt_sampling_;
+         as5600_have_status_ = true;
+         __DMB();
+-        as5600_status_seq_++;
++        ++as5600_status_seq_;
+     }
+-    as5600_complete_seq_++;
+-    as5600_irq_consecutive_errors_ =
+-        as5600::update_failure_count(as5600_irq_consecutive_errors_, true);
++
++    __DMB();
++    ++as5600_complete_seq_;
++    __DMB();
+     as5600_i2c_pending_ = 0;
+ #endif
+ }
+ 
+ void Encoder::as5600_note_i2c_failure() {
+ #if HW_VERSION_MAJOR == 3
+-    as5600_complete_seq_++;
+-    as5600_failed_seq_++;
+-    as5600_error_seq_++;
++    // Publish all failure payload before error_seq_. ControlLoop is allowed to
++    // preempt this IRQ, so error_seq_ is the explicit commit marker for the
++    // failure state it consumes. complete_seq_ is committed afterwards for the
++    // rate/error statistics. pending is always the final write.
+     as5600_irq_consecutive_errors_ =
+         as5600::update_failure_count(as5600_irq_consecutive_errors_, false);
+     if (as5600_irq_consecutive_errors_ >= as5600::MAX_CONSECUTIVE_FAILURES)
+         as5600_recovery_requested_ = true;
++    ++as5600_failed_seq_;
++
++    __DMB();
++    ++as5600_error_seq_;
++    __DMB();
++    ++as5600_complete_seq_;
++    __DMB();
++    as5600_i2c_pending_ = 0;
+ #endif
+ }
+ 
+ void Encoder::as5600_i2c_error() {
+ #if HW_VERSION_MAJOR == 3
+-    as5600_i2c_pending_ = 0;
+     as5600_note_i2c_failure();
+ #endif
+ }
+@@ -265,8 +284,12 @@ void Encoder::as5600_service_idle() {
+     // This service is called from the low-priority Axis IDLE task. Never move
+     // HAL deinitialization or GPIO clock recovery back into Encoder::update().
+     as5600_recovery_blocked_ = true;
+-    as5600_i2c_pending_ = 0;
++    // HAL_I2C_DeInit() disables the peripheral IRQs. Keep pending asserted
++    // until the peripheral is actually quiesced so the sampling ISR cannot
++    // start a new transfer during teardown.
+     HAL_I2C_DeInit(&hi2c1);
++    __DMB();
++    as5600_i2c_pending_ = 0;
+ 
+     GPIO_InitTypeDef gpio = {};
+     gpio.Pin = GPIO_PIN_6 | GPIO_PIN_7;
+@@ -298,9 +321,18 @@ void Encoder::as5600_service_idle() {
+     as5600_irq_consecutive_errors_ = 0;
+     as5600_consecutive_errors_ = 0;
+     as5600_consecutive_rejected_samples_ = 0;
++    // A single-turn AS5600 cannot prove how many revolutions occurred while
++    // communication was unavailable. Preserve the nearest-path coordinate for
++    // smooth FOC resumption, but explicitly invalidate software multi-turn
++    // absolute position until the application re-homes/sets a linear count.
+     as5600_resume_after_recovery_ = as5600_have_sample_;
+-    as5600_monitor_start_tick_ = odrv.n_evt_sampling_;
++    if (as5600_have_sample_)
++        as5600_multiturn_valid_ = false;
+     const bool configured = as5600_configure_volatile();
++    // Start the post-recovery freshness window after the blocking volatile
++    // reconfiguration has completed. Otherwise the configuration transaction
++    // itself can consume the whole stale timeout before the first async sample.
++    as5600_monitor_start_tick_ = odrv.n_evt_sampling_;
+     if (!configured) {
+         set_error(as5600_config_i2c_ok_ ? ERROR_ABS_I2C_MAGNET_ERROR :
+                   ERROR_ABS_I2C_COM_FAIL);
+@@ -410,6 +442,8 @@ void Encoder::set_linear_count(int32_t count) {
+     shadow_count_ = count;
+     pos_estimate_counts_ = (float)count;
+     tim_cnt_sample_ = count;
++    if (mode_ == MODE_I2C_ABS_AS5600)
++        as5600_multiturn_valid_ = true;
+ 
+     //Write hardware last
+     timer_->Instance->CNT = count;
+@@ -999,6 +1033,7 @@ bool Encoder::update() {
+         uint32_t last_status_tick;
+         bool have_status;
+         uint32_t busy_skip_seq;
++        uint32_t pending_skip_seq;
+         uint8_t irq_consecutive_errors;
+         uint32_t prim = cpu_enter_critical();
+         sample_seq = as5600_sample_seq_;
+@@ -1012,9 +1047,11 @@ bool Encoder::update() {
+         last_status_tick = as5600_last_status_tick_;
+         have_status = as5600_have_status_;
+         busy_skip_seq = as5600_busy_skip_seq_;
++        pending_skip_seq = as5600_pending_skip_seq_;
+         irq_consecutive_errors = as5600_irq_consecutive_errors_;
+         cpu_exit_critical(prim);
+         as5600_busy_skip_count_ = busy_skip_seq;
++        as5600_pending_skip_count_ = pending_skip_seq;
+         as5600_consecutive_errors_ = irq_consecutive_errors;
+         if (status_seq != as5600_seen_status_seq_) {
+             as5600_seen_status_seq_ = status_seq;
+@@ -1039,6 +1076,7 @@ bool Encoder::update() {
+                 pos_estimate_counts_ = (float)raw;
+                 pos_cpr_counts_ = (float)raw;
+                 as5600_have_sample_ = true;
++                as5600_multiturn_valid_ = true;
+                 as5600_first_sample_ = true;
+                 as5600_new_sample = true;
+                 as5600_consecutive_rejected_samples_ = 0;
+@@ -1046,14 +1084,16 @@ bool Encoder::update() {
+                     config_.as5600_calibration_version == AS5600_CALIBRATION_VERSION)
+                     is_ready_ = true;
+             } else {
+-                const as5600::SamplePlausibility plausibility =
+-                    as5600::check_sample(raw, last_accepted_raw_,
+-                                         last_sample_tick, last_accepted_tick_,
+-                                         current_meas_period,
+-                                         config_.as5600_max_mechanical_speed);
+-                raw_delta_ = plausibility.raw_delta;
+-                max_abs_raw_delta_ = plausibility.max_abs_raw_delta;
+-                if (plausibility.accepted) {
++                if (as5600_resume_after_recovery_) {
++                    // First sample after a successful bus recovery is a
++                    // re-anchor sample. It must not be compared against the
++                    // normal running-state anti-glitch cap: legitimate manual
++                    // motion during the disarmed recovery gap can exceed the normal
++                    // running-state plausibility window. Keep only the nearest single-turn delta for a
++                    // smooth coordinate handoff; multi-turn validity was
++                    // already invalidated by the recovery service.
++                    raw_delta_ = as5600::wrapped_delta(raw, last_accepted_raw_);
++                    max_abs_raw_delta_ = 0;
+                     as5600_accepted_interval_ticks =
+                         (uint32_t)(last_sample_tick - last_accepted_tick_);
+                     last_accepted_raw_ = raw;
+@@ -1061,22 +1101,40 @@ bool Encoder::update() {
+                     pos_abs_ = raw;
+                     as5600_new_sample = true;
+                     as5600_consecutive_rejected_samples_ = 0;
++                    ++as5600_reanchor_count_;
+                 } else {
+-                    ++rejected_sample_count_;
+-                    as5600_consecutive_rejected_samples_ =
+-                        as5600::update_failure_count(
+-                            as5600_consecutive_rejected_samples_, false);
+-                    if (as5600::sample_rejection_failed(
+-                            as5600_consecutive_rejected_samples_)) {
+-                        set_error(ERROR_ABS_I2C_INVALID_SAMPLE);
+-                        as5600::RecoveryState recovery = as5600::request_recovery(
+-                            {as5600_recovery_requested_, as5600_recovery_blocked_,
+-                             as5600_recovery_attempts_, as5600_recovery_next_tick_},
+-                            odrv.n_evt_sampling_);
+-                        as5600_recovery_requested_ = recovery.requested;
+-                        as5600_recovery_blocked_ = recovery.blocked;
+-                        as5600_recovery_attempts_ = recovery.attempts;
+-                        as5600_recovery_next_tick_ = recovery.next_tick;
++                    const as5600::SamplePlausibility plausibility =
++                        as5600::check_sample(raw, last_accepted_raw_,
++                                             last_sample_tick, last_accepted_tick_,
++                                             current_meas_period,
++                                             config_.as5600_max_mechanical_speed);
++                    raw_delta_ = plausibility.raw_delta;
++                    max_abs_raw_delta_ = plausibility.max_abs_raw_delta;
++                    if (plausibility.accepted) {
++                        as5600_accepted_interval_ticks =
++                            (uint32_t)(last_sample_tick - last_accepted_tick_);
++                        last_accepted_raw_ = raw;
++                        last_accepted_tick_ = last_sample_tick;
++                        pos_abs_ = raw;
++                        as5600_new_sample = true;
++                        as5600_consecutive_rejected_samples_ = 0;
++                    } else {
++                        ++rejected_sample_count_;
++                        as5600_consecutive_rejected_samples_ =
++                            as5600::update_failure_count(
++                                as5600_consecutive_rejected_samples_, false);
++                        if (as5600::sample_rejection_failed(
++                                as5600_consecutive_rejected_samples_)) {
++                            set_error(ERROR_ABS_I2C_INVALID_SAMPLE);
++                            as5600::RecoveryState recovery = as5600::request_recovery(
++                                {as5600_recovery_requested_, as5600_recovery_blocked_,
++                                 as5600_recovery_attempts_, as5600_recovery_next_tick_},
++                                odrv.n_evt_sampling_);
++                            as5600_recovery_requested_ = recovery.requested;
++                            as5600_recovery_blocked_ = recovery.blocked;
++                            as5600_recovery_attempts_ = recovery.attempts;
++                            as5600_recovery_next_tick_ = recovery.next_tick;
++                        }
+                     }
+                 }
+             }
+@@ -1100,8 +1158,9 @@ bool Encoder::update() {
+         const uint32_t sample_reference_tick = as5600_have_sample_ ?
+             last_accepted_tick_ : as5600_monitor_start_tick_;
+         sample_age_ = (odrv.n_evt_sampling_ - sample_reference_tick) * current_meas_period;
+-        const uint32_t stale_reference_tick = as5600_resume_after_recovery_ ?
+-            as5600_monitor_start_tick_ : sample_reference_tick;
++        const uint32_t stale_reference_tick =
++            (as5600_resume_after_recovery_ && !as5600_new_sample) ?
++                as5600_monitor_start_tick_ : sample_reference_tick;
+         if (!as5600_recovery_blocked_ &&
+             as5600::sample_is_stale(odrv.n_evt_sampling_, stale_reference_tick)) {
+             set_error(ERROR_ABS_I2C_COM_FAIL);
+@@ -1238,10 +1297,12 @@ bool Encoder::update() {
+                 if (as5600_new_sample)
+                     pos_abs_latched = pos_abs_;
+                 if (as5600_resume_after_recovery_ && as5600_new_sample) {
+-                    const int32_t resumed = as5600::resume_multiturn(
+-                        shadow_count_, (uint16_t)pos_abs_latched,
+-                        (uint16_t)count_in_cpr_);
+-                    delta_enc = resumed - shadow_count_;
++                    const as5600::RecoveryReanchor reanchor =
++                        as5600::recovery_reanchor(
++                            shadow_count_, (uint16_t)pos_abs_latched,
++                            (uint16_t)count_in_cpr_);
++                    delta_enc = reanchor.resumed_shadow - shadow_count_;
++                    as5600_multiturn_valid_ = reanchor.multiturn_valid;
+                     as5600_recovery_sample = true;
+                     as5600_resume_after_recovery_ = false;
+                 } else {
