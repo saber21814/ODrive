@@ -1,0 +1,45 @@
+name: Apply AS5600 safety fix
+
+on:
+  push:
+    branches:
+      - fix/as5600-safety
+    paths:
+      - 'tools/as5600-patches/**'
+      - '.github/workflows/apply-as5600-safety.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/as5600-safety
+          fetch-depth: 0
+
+      - name: Apply reviewed safety patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          for p in tools/as5600-patches/*.patch; do
+            echo "Checking $p"
+            git apply --check "$p"
+            git apply "$p"
+          done
+          git diff --check
+
+      - name: Commit source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf tools/as5600-patches
+          rm -f .github/workflows/apply-as5600-safety.yml
+          git config user.name "AS5600 safety bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix AS5600 ISR publication and recovery reanchor"
+          git push origin HEAD:fix/as5600-safety
