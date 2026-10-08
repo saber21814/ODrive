@@ -57,7 +57,21 @@ void CANSimple::handle_can_message(const can_Message_t& msg) {
 
 void CANSimple::do_command(Axis& axis, const can_Message_t& msg) {
     const uint32_t cmd = get_cmd_id(msg.id);
+#if defined(REHAB_V12)
+    const bool read_only = cmd==MSG_GET_MOTOR_ERROR || cmd==MSG_GET_ENCODER_ERROR ||
+        cmd==MSG_GET_SENSORLESS_ERROR || cmd==MSG_GET_ENCODER_ESTIMATES ||
+        cmd==MSG_GET_ENCODER_COUNT || cmd==MSG_GET_IQ || cmd==MSG_GET_SENSORLESS_ESTIMATES ||
+        cmd==MSG_GET_BUS_VOLTAGE_CURRENT || cmd==MSG_GET_ADC_VOLTAGE || cmd==MSG_GET_CONTROLLER_ERROR;
+    if (cmd==MSG_ODRIVE_ESTOP || (cmd==MSG_SET_AXIS_REQUESTED_STATE && !msg.rtr && msg.len>=4 &&
+        msg.buf[0]==1 && msg.buf[1]==0 && msg.buf[2]==0 && msg.buf[3]==0 && !rehab::native_input_allowed())) {
+        rehab::native_emergency_stop(); axis.motor_.disarm(); return;
+    }
+    rehab::NativeWriteGuard native_permit(!read_only);
+    if (!native_permit) return;
+    if (!read_only) axis.watchdog_feed();
+#else
     axis.watchdog_feed();
+#endif
     switch (cmd) {
         case MSG_CO_NMT_CTRL:
             break;

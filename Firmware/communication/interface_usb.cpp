@@ -13,6 +13,9 @@
 #include <freertos_vars.h>
 
 #include <odrive_main.h>
+#if defined(REHAB_V12) && REHAB_ENABLE_PROTOCOL
+#include "Rehab/platform/stream.hpp"
+#endif
 
 osThreadId usb_thread;
 const uint32_t stack_size_usb_thread = 4096; // Bytes
@@ -151,6 +154,9 @@ LegacyProtocolPacketBased fibre_over_usb(&usb_native_rx_stream, &usb_native_tx_s
 fibre::AsyncStreamSinkMultiplexer<2> usb_cdc_tx_multiplexer(usb_cdc_tx_stream);
 fibre::BufferedStreamSink<64> usb_cdc_stdout_sink(usb_cdc_tx_multiplexer); // Used in communication.cpp
 AsciiProtocol ascii_over_cdc(&usb_cdc_rx_stream, &usb_cdc_tx_multiplexer);
+#if defined(REHAB_V12) && REHAB_ENABLE_PROTOCOL
+static rehab::platform::Stream rehab_over_cdc(0,usb_cdc_rx_stream,usb_cdc_tx_stream);
+#endif
 
 bool usb_cdc_stdout_pending = false;
 
@@ -181,9 +187,15 @@ static void usb_server_thread(void * ctx) {
                         || odrv.config_.usb_cdc_protocol == ODrive::STREAM_PROTOCOL_TYPE_ASCII_AND_STDOUT) {
                     ascii_over_cdc.start();
                 }
+#if defined(REHAB_V12) && REHAB_ENABLE_PROTOCOL
+                else if(odrv.config_.usb_cdc_protocol==ODrive::STREAM_PROTOCOL_TYPE_REHAB) rehab_over_cdc.start();
+#endif
             } break;
 
             case 2: { // USB disconnected event
+#if defined(REHAB_V12) && REHAB_ENABLE_PROTOCOL
+                rehab_over_cdc.stop();
+#endif
                 usb_cdc_tx_stream.connected_ = false;
                 usb_native_tx_stream.connected_ = false;
                 usb_cdc_rx_stream.connected_ = false;
@@ -212,8 +224,17 @@ static void usb_server_thread(void * ctx) {
 
             case 7: { // stdout has data
                 usb_cdc_stdout_pending = false;
+#if defined(REHAB_V12) && REHAB_ENABLE_PROTOCOL
+                // Protocol selection applies on connection/startup. Even if a
+                // native client edits that setting live, never mix printf into
+                // an already running framed stream.
+                if(rehab_over_cdc.active())break;
+#endif
                 usb_cdc_stdout_sink.maybe_start_async_write();
             } break;
+#if defined(REHAB_V12) && REHAB_ENABLE_PROTOCOL
+            case 8: {rehab_over_cdc.poll();} break;
+#endif
         }
     }
 }

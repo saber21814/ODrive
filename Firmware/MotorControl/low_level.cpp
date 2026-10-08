@@ -78,6 +78,9 @@ osThreadId analog_thread = 0;
 
 // @brief Arms the brake resistor
 void safety_critical_arm_brake_resistor() {
+#if defined(REHAB_V12)
+    if (!rehab::platform::brake_may_arm()) return;
+#endif
     CRITICAL_SECTION() {
         for (size_t i = 0; i < AXIS_COUNT; ++i) {
             axes[i].motor_.I_bus_ = 0.0f;
@@ -116,6 +119,9 @@ void safety_critical_disarm_brake_resistor() {
 // @brief Updates the brake resistor PWM timings unless
 // the brake resistor is disarmed.
 void safety_critical_apply_brake_resistor_timings(uint32_t low_off, uint32_t high_on) {
+#if defined(REHAB_V12)
+    if (!rehab::platform::brake_may_arm()) return;
+#endif
     if (high_on - low_off < TIM_APB1_DEADTIME_CLOCKS) {
         odrv.disarm_with_error(ODrive::ERROR_BRAKE_DEADTIME_VIOLATION);
     }
@@ -174,8 +180,14 @@ void start_adc_pwm() {
 #if HW_VERSION_MAJOR == 3
     htim2.Instance->CCR3 = 0;
     htim2.Instance->CCR4 = TIM_APB1_PERIOD_CLOCKS + 1;
-    HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
-    HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
+#if defined(REHAB_V12)
+    if (rehab::platform::brake_may_arm()) {
+#endif
+        HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
+        HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
+#if defined(REHAB_V12)
+    }
+#endif
 #endif
 
     if (odrv.config_.enable_brake_resistor) {
@@ -196,6 +208,9 @@ uint16_t adc_measurements_[ADC_CHANNEL_COUNT] = { 0 };
 // The injected (high priority) channel of ADC1 is used to sample vbus_voltage.
 // This conversion is triggered by TIM1 at the frequency of the motor control loop.
 void start_general_purpose_adc() {
+#if defined(REHAB_V12)
+    if (!rehab_board_start_general_adc()) odrv.misconfigured_ = true;
+#else
     ADC_ChannelConfTypeDef sConfig;
 
     // Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
@@ -228,6 +243,7 @@ void start_general_purpose_adc() {
     }
 
     HAL_ADC_Start_DMA(&hadc1, reinterpret_cast<uint32_t*>(adc_measurements_), ADC_CHANNEL_COUNT);
+#endif
 }
 
 // @brief Returns the ADC voltage associated with the specified pin.
@@ -302,10 +318,15 @@ uint16_t channel_from_gpio(Stm32Gpio gpio) {
 // @brief Given an adc channel return the voltage as a ratio of adc_ref_voltage
 // returns -1.0f if the channel is not valid.
 float get_adc_relative_voltage_ch(uint16_t channel) {
+#if defined(REHAB_V12)
+    const float voltage = rehab_board_adc_voltage(channel);
+    return voltage < 0.0f ? -1.0f : voltage / adc_ref_voltage;
+#else
     if (channel < ADC_CHANNEL_COUNT)
         return (float)adc_measurements_[channel] / adc_full_scale;
     else
         return -1.0f;
+#endif
 }
 
 //--------------------------------

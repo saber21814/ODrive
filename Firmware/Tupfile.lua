@@ -269,6 +269,19 @@ board_v3 = {
     }
 }
 
+board_rehab_v12 = {
+    root = 'Board/rehab_v12',
+    root_interface = 'ODriveRehabV12',
+    include = {stm32f4xx_hal_pkg},
+    include_dirs = board_v3.include_dirs,
+    code_files = {},
+    cflags = {'-DSTM32F405xx', '-DHW_VERSION_MAJOR=3', '-DREHAB_V12=1'},
+    ldflags = {'-TBoard/rehab_v12/STM32F405RGTx_FLASH.ld', '-larm_cortexM4lf_math'},
+}
+for _, name in ipairs(board_v3.code_files) do
+    if name ~= 'Src/i2c.c' then table.insert(board_rehab_v12.code_files, name) end
+end
+
 board_v4 = {
     root = 'Private/v4',
     root_interface = 'ODrive4',
@@ -312,6 +325,7 @@ board_v4 = {
 }
 
 boards = {
+    ["rehab-v1.2"] = {include={board_rehab_v12}, cflags={"-DHW_VERSION_MINOR=12 -DHW_VERSION_VOLTAGE=0"}},
     ["v3.1"] = {include={board_v3}, cflags={"-DHW_VERSION_MINOR=1 -DHW_VERSION_VOLTAGE=24"}},
     ["v3.2"] = {include={board_v3}, cflags={"-DHW_VERSION_MINOR=2 -DHW_VERSION_VOLTAGE=24"}},
     ["v3.3"] = {include={board_v3}, cflags={"-DHW_VERSION_MINOR=3 -DHW_VERSION_VOLTAGE=24"}},
@@ -370,6 +384,28 @@ elseif boards[boardversion] == nil then
 end
 board = boards[boardversion]
 
+if boardversion == 'rehab-v1.2' then
+    CFLAGS += '-IDrivers/STM32'
+    for i, name in ipairs(odrive_firmware_pkg.code_files) do
+        if name == 'Drivers/STM32/stm32_spi_arbiter.cpp' then
+            odrive_firmware_pkg.code_files[i] = 'Rehab/drivers/spi_arbiter.cpp'
+        end
+    end
+    local extra_sources = {'Rehab/core/engine.cpp', 'Rehab/protocol/frame.cpp',
+        'Rehab/protocol/config_fields.cpp', 'Rehab/protocol/service.cpp',
+        'Rehab/platform/runtime.cpp', 'Rehab/platform/stream.cpp', 'Rehab/platform/isr_timing.cpp'}
+    for _, name in ipairs(extra_sources) do table.insert(odrive_firmware_pkg.code_files, name) end
+    if tup.getconfig('REHAB_HX711') == 'true' then table.insert(odrive_firmware_pkg.code_files, 'Rehab/drivers/hx711.cpp') end
+    if tup.getconfig('REHAB_NETWORK') == 'true' then table.insert(odrive_firmware_pkg.code_files, 'Rehab/drivers/ch394.cpp') end
+    local options = {HX711='HX711', NETWORK='NETWORK', APPLICATION='APPLICATION',
+        PROTOCOL='PROTOCOL', TRAINING='TRAINING', STATISTICS='STATISTICS', COMPENSATION='COMPENSATION'}
+    for option, macro in pairs(options) do
+        CFLAGS += '-DREHAB_ENABLE_'..macro..'='..(tup.getconfig('REHAB_'..option)=='true' and '1' or '0')
+    end
+    CFLAGS += '-DREHAB_STAGE='..(tup.getconfig('REHAB_STAGE')~='' and tup.getconfig('REHAB_STAGE') or '1')
+    CFLAGS += '-DREHAB_REAL_MOTOR='..(tup.getconfig('REHAB_REAL_MOTOR')=='true' and '1' or '0')
+end
+
 -- --not 
 -- TODO: remove this setting
 if tup.getconfig("USB_PROTOCOL") ~= "native" and tup.getconfig("USB_PROTOCOL") ~= "" then
@@ -420,10 +456,15 @@ print('Using python command "'..python_command..'"')
 
 -- Autogen files from YAML interface definitions
 root_interface = board.include[1].root_interface
-tup.frule{inputs={'fibre-cpp/interfaces_template.j2', extra_inputs='odrive-interface.yaml'}, command=python_command..' interface_generator_stub.py --definitions odrive-interface.yaml --template %f --output %o', outputs='autogen/interfaces.hpp'}
-tup.frule{inputs={'fibre-cpp/function_stubs_template.j2', extra_inputs='odrive-interface.yaml'}, command=python_command..' interface_generator_stub.py --definitions odrive-interface.yaml --template %f --output %o', outputs='autogen/function_stubs.hpp'}
-tup.frule{inputs={'fibre-cpp/endpoints_template.j2', extra_inputs='odrive-interface.yaml'}, command=python_command..' interface_generator_stub.py --definitions odrive-interface.yaml --generate-endpoints '..root_interface..' --template %f --output %o', outputs='autogen/endpoints.hpp'}
-tup.frule{inputs={'fibre-cpp/type_info_template.j2', extra_inputs='odrive-interface.yaml'}, command=python_command..' interface_generator_stub.py --definitions odrive-interface.yaml --template %f --output %o', outputs='autogen/type_info.hpp'}
+definitions = 'odrive-interface.yaml'
+if boardversion == 'rehab-v1.2' then
+    tup.frule{inputs={'odrive-interface.yaml','Rehab/interface.py'}, command=python_command..' Rehab/interface.py --output %o', outputs='autogen/rehab-interface.yaml'}
+    definitions = 'autogen/rehab-interface.yaml'
+end
+tup.frule{inputs={'fibre-cpp/interfaces_template.j2', extra_inputs=definitions}, command=python_command..' interface_generator_stub.py --definitions '..definitions..' --template %f --output %o', outputs='autogen/interfaces.hpp'}
+tup.frule{inputs={'fibre-cpp/function_stubs_template.j2', extra_inputs=definitions}, command=python_command..' interface_generator_stub.py --definitions '..definitions..' --template %f --output %o', outputs='autogen/function_stubs.hpp'}
+tup.frule{inputs={'fibre-cpp/endpoints_template.j2', extra_inputs=definitions}, command=python_command..' interface_generator_stub.py --definitions '..definitions..' --generate-endpoints '..root_interface..' --template %f --output %o', outputs='autogen/endpoints.hpp'}
+tup.frule{inputs={'fibre-cpp/type_info_template.j2', extra_inputs=definitions}, command=python_command..' interface_generator_stub.py --definitions '..definitions..' --template %f --output %o', outputs='autogen/type_info.hpp'}
 
 
 add_pkg(board)

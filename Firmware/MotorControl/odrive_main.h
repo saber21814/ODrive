@@ -5,6 +5,9 @@
 #include <board.h>
 
 #ifdef __cplusplus
+#if defined(REHAB_V12)
+#include "Rehab/platform/runtime.hpp"
+#endif
 #include <communication/interface_usb.h>
 #include <communication/interface_i2c.h>
 #include <communication/interface_uart.h>
@@ -168,8 +171,14 @@ static Stm32Gpio get_gpio(size_t gpio_num) {
 }
 
 // general system functions defined in main.cpp
+#if defined(REHAB_V12)
+#include "Rehab/platform/diagnostics.hpp"
+#endif
 class ODrive : public ODriveIntf {
 public:
+#if defined(REHAB_V12)
+    rehab::platform::Diagnostics rehab_;
+#endif
     bool save_configuration() override;
     void erase_configuration() override;
     void reboot() override { NVIC_SystemReset(); }

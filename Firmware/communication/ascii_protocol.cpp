@@ -29,7 +29,9 @@ using namespace fibre;
 
 /* Private variables ---------------------------------------------------------*/
 
-#if HW_VERSION_MAJOR == 3
+#if defined(REHAB_V12)
+static Introspectable root_obj = ODriveRehabV12TypeInfo<ODrive>::make_introspectable(odrv);
+#elif HW_VERSION_MAJOR == 3
 static Introspectable root_obj = ODrive3TypeInfo<ODrive>::make_introspectable(odrv);
 #elif HW_VERSION_MAJOR == 4
 static Introspectable root_obj = ODrive4TypeInfo<ODrive>::make_introspectable(odrv);
@@ -107,6 +109,21 @@ void AsciiProtocol::process_line(cbufptr_t buffer) {
     }
 
 
+#if defined(REHAB_V12)
+    // Native read-only commands do not renew the application's heartbeat.
+    const bool read_only = cmd[0]=='r' || cmd[0]=='f' || cmd[0]=='h' || cmd[0]=='i';
+    // Preserve a stop escape even when training owns every normal native write.
+    if (cmd[0]=='w') {
+        char name[MAX_LINE_LENGTH]{}; int requested=-1; char extra=0;
+        if (sscanf(cmd,"w %255s %d %c",name,&requested,&extra)==2 &&
+            strcmp(name,"axis0.requested_state")==0 && requested==Axis::AXIS_STATE_IDLE &&
+            !rehab::native_input_allowed()) {
+            rehab::native_emergency_stop(); respond(use_checksum,"stopped"); return;
+        }
+    }
+    rehab::NativeWriteGuard native_permit(!read_only);
+    if (!native_permit) { respond(use_checksum,"control busy"); return; }
+#endif
     // check incoming packet type
     switch(cmd[0]) {
         case 'p': cmd_set_position(cmd, use_checksum);                break;  // position control
@@ -368,7 +385,7 @@ void AsciiProtocol::cmd_write_property(char * pStr, bool use_checksum) {
     char name[MAX_LINE_LENGTH];
     char value[MAX_LINE_LENGTH];
 
-    if (sscanf(pStr, "w %255s %255s", name, value) < 1) {
+    if (sscanf(pStr, "w %255s %255s", name, value) < 2) {
         respond(use_checksum, "invalid command format");
     } else {
         Introspectable property = root_obj.get_child(name, sizeof(name));

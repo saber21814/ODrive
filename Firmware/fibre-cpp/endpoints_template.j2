@@ -52,9 +52,9 @@ bool endpoint_handler(int idx, cbufptr_t* input_buffer, bufptr_t* output_buffer)
     switch (idx) {
 [%- for endpoint in endpoints %]
 [%- if (endpoint.function.name == 'exchange' or endpoint.function.name == 'read') and endpoint.in_bindings | list == ['obj'] %]
-        case [[endpoint.id]]: { return [[endpoint.function.fullname | to_snake_case]]([% for k, arg in endpoint.function.in.items() %][% if k in endpoint.in_bindings %]static_cast<[[arg.type.c_name]]>([[endpoint.in_bindings[k]]])[% else %]std::nullopt[% endif %], [% endfor %][% for k, arg in endpoint.function.out.items() %][% if k in endpoint.out_bindings %]static_cast<[[arg.type.c_name]]*>([[endpoint.out_bindings[k]]])[% else %]nullptr[% endif %], [% endfor %]input_buffer, output_buffer); } break;
+        case [[endpoint.id]]: { return [[endpoint.function.fullname | to_snake_case]]([% for k, arg in endpoint.function.in.items() %][% if k in endpoint.in_bindings %]static_cast<[[arg.type.c_name]]>([[endpoint.in_bindings[k]]])[% if k == 'obj' and endpoint.function.name == 'exchange' and ('::get_get_adc_voltage_in_' in endpoint.in_bindings[k] or '::get_get_interrupt_status_in_' in endpoint.in_bindings[k] or '::get_get_dma_status_in_' in endpoint.in_bindings[k] or 'OscilloscopeIntf::get_get_val_in_' in endpoint.in_bindings[k]) %].diagnostic_argument()[% endif %][% else %]std::nullopt[% endif %], [% endfor %][% for k, arg in endpoint.function.out.items() %][% if k in endpoint.out_bindings %]static_cast<[[arg.type.c_name]]*>([[endpoint.out_bindings[k]]])[% else %]nullptr[% endif %], [% endfor %]input_buffer, output_buffer); } break;
 [%- else %]
-        case [[endpoint.id]]: { return [[endpoint.function.fullname | to_snake_case]]([% for k, arg in endpoint.function.in.items() %][% if k in endpoint.in_bindings %]static_cast<[[arg.type.c_name]]>([[endpoint.in_bindings[k]]])[% else %]std::nullopt[% endif %], [% endfor %][% for k, arg in endpoint.function.out.items() %][% if k in endpoint.out_bindings %]static_cast<[[arg.type.c_name]]*>([[endpoint.out_bindings[k]]])[% else %]nullptr[% endif %], [% endfor %]input_buffer, output_buffer); } break;
+        case [[endpoint.id]]: { return [[endpoint.function.fullname | to_snake_case]]([% for k, arg in endpoint.function.in.items() %][% if k in endpoint.in_bindings %]static_cast<[[arg.type.c_name]]>([[endpoint.in_bindings[k]]])[% if k == 'obj' and endpoint.function.name == 'exchange' and ('::get_get_adc_voltage_in_' in endpoint.in_bindings[k] or '::get_get_interrupt_status_in_' in endpoint.in_bindings[k] or '::get_get_dma_status_in_' in endpoint.in_bindings[k] or 'OscilloscopeIntf::get_get_val_in_' in endpoint.in_bindings[k]) %].diagnostic_argument()[% endif %][% else %]std::nullopt[% endif %], [% endfor %][% for k, arg in endpoint.function.out.items() %][% if k in endpoint.out_bindings %]static_cast<[[arg.type.c_name]]*>([[endpoint.out_bindings[k]]])[% else %]nullptr[% endif %], [% endfor %]input_buffer, output_buffer); } break;
 [%- endif %]
 [%- endfor %]
         default: return false;
@@ -75,6 +75,10 @@ bool is_endpoint_ref_valid(endpoint_ref_t endpoint_ref) {
 }
 
 bool set_endpoint_from_float(endpoint_ref_t endpoint_ref, float value) {
+#if defined(REHAB_V12)
+    rehab::NativeWriteGuard native_permit;
+    if (!native_permit) return false;
+#endif
     if (endpoint_ref.json_crc != json_crc_) {
         return false;
     }

@@ -193,9 +193,15 @@ Motor::Motor(TIM_HandleTypeDef* timer,
  * @returns: True on success, false otherwise
  */
 bool Motor::arm(PhaseControlLaw<3>* control_law) {
+#if defined(REHAB_V12)
+    if (!rehab::platform::motor_may_arm()) return false;
+#endif
     axis_->mechanical_brake_.release();
 
     CRITICAL_SECTION() {
+#if defined(REHAB_V12)
+        if (!rehab::platform::motor_may_arm()) return false;
+#endif
         control_law_ = control_law;
 
         // Reset controller states, integrators, setpoints, etc.
@@ -227,6 +233,9 @@ bool Motor::arm(PhaseControlLaw<3>* control_law) {
  */
 void Motor::apply_pwm_timings(uint16_t timings[3], bool tentative) {
     CRITICAL_SECTION() {
+#if defined(REHAB_V12)
+        if (!rehab::platform::motor_may_arm()) { disarm(); return; }
+#endif
         if (odrv.config_.enable_brake_resistor && !brake_resistor_armed) {
             disarm_with_error(ERROR_BRAKE_RESISTOR_DISARMED);
         }

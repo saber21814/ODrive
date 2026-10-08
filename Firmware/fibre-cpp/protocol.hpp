@@ -4,6 +4,9 @@ see protocol.md for the protocol specification
 
 #ifndef __PROTOCOL_HPP
 #define __PROTOCOL_HPP
+#if defined(REHAB_V12)
+#include "Rehab/native_access.hpp"
+#endif
 
 #include <functional>
 #include <limits>
@@ -272,6 +275,16 @@ struct Property {
     Property& operator*() { return *this; }
     Property* operator->() { return this; }
 
+    // Only generated argument staging for explicitly read-only functions uses
+    // this copy. It is not exposed as an endpoint or a firmware configuration.
+    Property diagnostic_argument() const {
+        Property copy = *this;
+#if defined(REHAB_V12)
+        copy.diagnostic_argument_ = true;
+#endif
+        return copy;
+    }
+
     T read() const {
         return (*getter_)(ctx_);
     }
@@ -279,6 +292,12 @@ struct Property {
     T exchange(std::optional<T> value) const {
         T old_value = (*getter_)(ctx_);
         if (value.has_value()) {
+#if defined(REHAB_V12)
+            if (diagnostic_argument_) { (*setter_)(ctx_, *value); return old_value; }
+            if (rehab::native_stop_property(ctx_, &*value, sizeof(T))) return old_value;
+            rehab::NativeWriteGuard permit;
+            if (!permit) return old_value;
+#endif
             (*setter_)(ctx_, *value);
         }
         return old_value;
@@ -287,6 +306,9 @@ struct Property {
     void* ctx_;
     T(*getter_)(void*);
     void(*setter_)(void*, T);
+#if defined(REHAB_V12)
+    bool diagnostic_argument_ = false;
+#endif
 };
 
 template<typename T>

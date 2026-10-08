@@ -115,6 +115,10 @@ bool Axis::wait_for_control_iteration() {
 
 // step/direction interface
 void Axis::step_cb() {
+#if defined(REHAB_V12)
+    rehab::NativeWriteGuard permit;
+    if (!permit) return;
+#endif
     if (step_dir_active_) {
         dir_gpio_.read() ? ++steps_ : --steps_;
         controller_.input_pos_updated();
@@ -128,6 +132,9 @@ void Axis::decode_step_dir_pins() {
 
 // @brief (de)activates step/dir input
 void Axis::set_step_dir_active(bool active) {
+#if defined(REHAB_V12)
+    active = active && rehab::native_input_allowed();
+#endif
     if (active) {
         // Subscribe to rising edges of the step GPIO
         if (!step_gpio_.subscribe(true, false, step_cb_wrapper, this)) {
@@ -455,6 +462,10 @@ bool Axis::run_idle_loop() {
 void Axis::run_state_machine_loop() {
     for (;;) {
         // Load the task chain if a specific request is pending
+#if defined(REHAB_V12)
+        if (!rehab::platform::axis_request_allowed(requested_state_))
+            requested_state_ = AXIS_STATE_IDLE;
+#endif
         if (requested_state_ != AXIS_STATE_UNDEFINED) {
             size_t pos = 0;
             if (requested_state_ == AXIS_STATE_STARTUP_SEQUENCE) {

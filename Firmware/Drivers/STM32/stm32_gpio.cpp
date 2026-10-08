@@ -1,5 +1,8 @@
 
 #include "stm32_gpio.hpp"
+#if defined(REHAB_V12)
+#include "Rehab/platform/isr_timing.h"
+#endif
 
 #define N_EXTI 16
 
@@ -214,6 +217,9 @@ void EXTI4_IRQHandler(void) {
 
 /** @brief Entrypoint for the EXTI lines 5-9 interrupt. */
 void EXTI9_5_IRQHandler(void) {
+#if defined(REHAB_V12)
+    rehab::platform::ScopedIsrTiming isr_timing(REHAB_ISR_EXTI9_5);
+#endif
     maybe_handle(5);
     maybe_handle(6);
     maybe_handle(7);

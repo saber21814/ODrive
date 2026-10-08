@@ -1,0 +1,463 @@
+{
+  "schema_version": 1,
+  "started_at_utc": "2026-10-04T04:39:12.211561+00:00",
+  "mode": "full",
+  "status": "passed",
+  "hardware_access": false,
+  "coverage_limits": [
+    "Host tests use production application/driver/runtime sources and explicit hardware carriers.",
+    "No ARM build, flashing, motor drive, physical waveform, interrupt timing or thermal validation is performed."
+  ],
+  "summary": {
+    "passed": 37,
+    "failed": 0,
+    "skipped": 0,
+    "total": 37
+  },
+  "elapsed_s": 55.345,
+  "updated_at_utc": "2026-10-04T04:40:07.556456+00:00",
+  "compiler": "D:\\mingw64\\bin\\g++.exe",
+  "source_report": "Firmware/build/rehab/tests/report.json",
+  "tests": [
+    {
+      "name": "core",
+      "production_sources": [
+        "Rehab/core/engine.cpp"
+      ],
+      "notes": [],
+      "status": "passed"
+    },
+    {
+      "name": "protocol",
+      "production_sources": [
+        "Rehab/protocol/frame.cpp"
+      ],
+      "notes": [],
+      "status": "passed"
+    },
+    {
+      "name": "service",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Includes 24-hour virtual time, 20 microsecond-clock wraps, and energy-reference checks."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a0t0s0c0",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a0t0s0c1",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a0t0s1c0",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a0t0s1c1",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a0t1s0c0",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a0t1s0c1",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a0t1s1c0",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a0t1s1c1",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a1t0s0c0",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a1t0s0c1",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a1t0s1c0",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a1t0s1c1",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a1t1s0c0",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a1t1s0c1",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a1t1s1c0",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "service_a1t1s1c1",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp"
+      ],
+      "notes": [
+        "Business service feature-combination regression; long virtual run is exercised by the primary service suite."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "features_t0s0c0",
+      "production_sources": [
+        "Rehab/core/engine.cpp"
+      ],
+      "notes": [],
+      "status": "passed"
+    },
+    {
+      "name": "features_t0s0c1",
+      "production_sources": [
+        "Rehab/core/engine.cpp"
+      ],
+      "notes": [],
+      "status": "passed"
+    },
+    {
+      "name": "features_t0s1c0",
+      "production_sources": [
+        "Rehab/core/engine.cpp"
+      ],
+      "notes": [],
+      "status": "passed"
+    },
+    {
+      "name": "features_t0s1c1",
+      "production_sources": [
+        "Rehab/core/engine.cpp"
+      ],
+      "notes": [],
+      "status": "passed"
+    },
+    {
+      "name": "features_t1s0c0",
+      "production_sources": [
+        "Rehab/core/engine.cpp"
+      ],
+      "notes": [],
+      "status": "passed"
+    },
+    {
+      "name": "features_t1s0c1",
+      "production_sources": [
+        "Rehab/core/engine.cpp"
+      ],
+      "notes": [],
+      "status": "passed"
+    },
+    {
+      "name": "features_t1s1c0",
+      "production_sources": [
+        "Rehab/core/engine.cpp"
+      ],
+      "notes": [],
+      "status": "passed"
+    },
+    {
+      "name": "features_t1s1c1",
+      "production_sources": [
+        "Rehab/core/engine.cpp"
+      ],
+      "notes": [],
+      "status": "passed"
+    },
+    {
+      "name": "driver_models",
+      "production_sources": [
+        "Rehab/drivers/spi_arbiter.cpp",
+        "Rehab/drivers/hx711.cpp",
+        "Rehab/drivers/ch394.cpp"
+      ],
+      "notes": [
+        "Actual V1.2 SPI arbiter, HX711 and CH394 sources; HAL/register models do not verify electrical timing."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "isr_timing",
+      "production_sources": [
+        "Rehab/platform/isr_timing.cpp"
+      ],
+      "notes": [
+        "Production DWT accounting with modeled cycle counter; not measured hardware latency or WCET."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "runtime",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp",
+        "Rehab/platform/runtime.cpp",
+        "fibre-cpp/protocol.hpp"
+      ],
+      "notes": [
+        "runtime_tests.cpp directly includes the actual runtime.cpp; do not compile runtime.cpp a second time.",
+        "HAL/RTOS/ODrive carrier objects are host models. The real-motor flag remains inhibited by unverified commissioning declarations."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "runtime_real_flag",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp",
+        "Rehab/platform/runtime.cpp",
+        "fibre-cpp/protocol.hpp"
+      ],
+      "notes": [
+        "runtime_tests.cpp directly includes the actual runtime.cpp; do not compile runtime.cpp a second time.",
+        "HAL/RTOS/ODrive carrier objects are host models. The real-motor flag remains inhibited by unverified commissioning declarations."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "native_ingress",
+      "production_sources": [
+        "Rehab/core/engine.cpp",
+        "Rehab/protocol/frame.cpp",
+        "Rehab/protocol/config_fields.cpp",
+        "Rehab/protocol/service.cpp",
+        "Rehab/platform/runtime.cpp",
+        "communication/ascii_protocol.cpp",
+        "communication/can/can_simple.cpp",
+        "MotorControl/axis.cpp",
+        "MotorControl/pwm_input.cpp",
+        "MotorControl/low_level.cpp",
+        "fibre-cpp/protocol.hpp"
+      ],
+      "notes": [
+        "Fresh source preparation extracts 52 complete production functions unchanged; manifest records source/function hashes and caller checks.",
+        "Real generated Fibre interfaces/stubs and complete runtime; HAL/RTOS, native object carriers and the lookup directory are mocked.",
+        "Bounded actual step_cb boundary/seeded regression supplements the excluded upstream 2^33-iteration test."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "stream",
+      "production_sources": [
+        "Rehab/platform/stream.cpp",
+        "fibre-cpp/include/fibre/async_stream.hpp"
+      ],
+      "notes": [
+        "Actual Stream adapter and Fibre async interfaces; endpoint and byte-queue carriers test partial transfers, reconnects and delayed completion callbacks."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "nvm_native",
+      "production_sources": [
+        "MotorControl/nvm_config.hpp",
+        "Drivers/STM32/stm32_nvm.h",
+        "fibre-cpp/crc.hpp"
+      ],
+      "notes": [
+        "Actual ConfigManager and CRC implementation with an in-memory NVM carrier; tests two-pass persistence, version-specific CRC seeds, truncation, corruption and interrupted writes."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "nvm_rehab",
+      "production_sources": [
+        "MotorControl/nvm_config.hpp",
+        "Drivers/STM32/stm32_nvm.h",
+        "fibre-cpp/crc.hpp"
+      ],
+      "notes": [
+        "Actual ConfigManager and CRC implementation with an in-memory NVM carrier; tests two-pass persistence, version-specific CRC seeds, truncation, corruption and interrupted writes."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "native",
+      "production_sources": [
+        "MotorControl/timer.hpp",
+        "MotorControl/utils.hpp",
+        "communication/can/can_helpers.hpp"
+      ],
+      "notes": [
+        "Uses the existing upstream Tests/*.cpp and original Tupfile host compiler flags.",
+        "step_cb is excluded to keep its exceptionally long loop out of bounded automated verification; it is not reported as passing.",
+        "The existing upstream trajectory test contains its original test-local implementation; this suite is regression evidence, not validation of real FOC or the real trajectory implementation."
+      ],
+      "status": "passed"
+    },
+    {
+      "name": "simulation",
+      "production_sources": [
+        "Rehab/core/engine.cpp"
+      ],
+      "notes": [
+        "60-second deterministic mass/load/actuator model and controlled stop; software only."
+      ],
+      "status": "passed"
+    }
+  ],
+  "firmware_source_sha256": "67b906ae8f2d1d5b505c9f3af9b7c7d439d142829c268a751c042d9227995d11",
+  "detailed_report_sha256": "7de84b6b62bdfc12f1a6f02ce74f8695c9d6175869143dfb7635eae2d3d72f19",
+  "native_ingress_provenance": "build/rehab/ingress_generated/manifest.json",
+  "native_ingress_provenance_sha256": "a8ad47c29cc6d897c7b524f915bec757514aac174aebbab0e0ae01ee41620198"
+}

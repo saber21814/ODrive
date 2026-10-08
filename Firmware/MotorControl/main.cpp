@@ -234,6 +234,9 @@ uint64_t ODrive::get_drv_fault() {
 }
 
 void ODrive::clear_errors() {
+#if defined(REHAB_V12)
+    rehab::platform::native_clear_faults();
+#endif
     for (auto& axis: axes) {
         axis.motor_.error_ = Motor::ERROR_NONE;
         axis.controller_.error_ = Controller::ERROR_NONE;
@@ -434,6 +437,9 @@ void ODrive::control_loop_cb(uint32_t timestamp) {
 
     // Controller of either axis might use the encoder estimate of the other
     // axis so we process both encoders before we continue.
+#if defined(REHAB_V12)
+    rehab::platform::control_hook();
+#endif
 
     for (auto& axis: axes) {
         MEASURE_TIME(axis.task_times_.sensorless_estimator_update)
@@ -448,6 +454,9 @@ void ODrive::control_loop_cb(uint32_t timestamp) {
         MEASURE_TIME(axis.task_times_.open_loop_controller_update)
             axis.open_loop_controller_.update(timestamp);
 
+#if defined(REHAB_V12)
+        rehab::platform::post_controller_hook();
+#endif
         MEASURE_TIME(axis.task_times_.motor_update)
             axis.motor_.update(timestamp); // uses torque from controller and phase_vel from encoder
 
@@ -584,6 +593,9 @@ static void rtos_main(void*) {
     }
 
     odrv.system_stats_.fully_booted = true;
+#if defined(REHAB_V12)
+    rehab::platform::start();
+#endif
 
     // Main thread finished starting everything and can delete itself now (yes this is legal).
     vTaskDelete(defaultTaskHandle);

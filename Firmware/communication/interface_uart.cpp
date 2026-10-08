@@ -11,6 +11,9 @@
 #include <cmsis_os.h>
 #include <freertos_vars.h>
 #include <odrive_main.h>
+#if defined(REHAB_V12) && REHAB_ENABLE_PROTOCOL
+#include "Rehab/platform/stream.hpp"
+#endif
 
 #define UART_TX_BUFFER_SIZE 64
 #define UART_RX_BUFFER_SIZE 64
@@ -113,6 +116,9 @@ LegacyProtocolStreamBased fibre_over_uart(&uart_rx_stream, &uart_tx_stream);
 fibre::AsyncStreamSinkMultiplexer<2> uart_tx_multiplexer(uart_tx_stream);
 fibre::BufferedStreamSink<64> uart0_stdout_sink(uart_tx_multiplexer); // Used in communication.cpp
 AsciiProtocol ascii_over_uart(&uart_rx_stream, &uart_tx_multiplexer);
+#if defined(REHAB_V12) && REHAB_ENABLE_PROTOCOL
+static rehab::platform::Stream rehab_over_uart(1,uart_rx_stream,uart_tx_stream);
+#endif
 
 bool uart0_stdout_pending = false;
 
@@ -125,6 +131,9 @@ static void uart_server_thread(void * ctx) {
             || odrv.config_.uart0_protocol == ODrive::STREAM_PROTOCOL_TYPE_ASCII_AND_STDOUT) {
         ascii_over_uart.start();
     }
+#if defined(REHAB_V12) && REHAB_ENABLE_PROTOCOL
+    else if(odrv.config_.uart0_protocol==ODrive::STREAM_PROTOCOL_TYPE_REHAB) rehab_over_uart.start();
+#endif
 
     for (;;) {
         osEvent event = osMessageGet(uart_event_queue, osWaitForever);
@@ -171,8 +180,14 @@ static void uart_server_thread(void * ctx) {
 
             case 3: { // stdout has data
                 uart0_stdout_pending = false;
+#if defined(REHAB_V12) && REHAB_ENABLE_PROTOCOL
+                if(rehab_over_uart.active())break;
+#endif
                 uart0_stdout_sink.maybe_start_async_write();
             } break;
+#if defined(REHAB_V12) && REHAB_ENABLE_PROTOCOL
+            case 4: {rehab_over_uart.poll();} break;
+#endif
         }
     }
 }

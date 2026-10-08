@@ -10,6 +10,9 @@
  */
 
 #include <fibre/bufptr.hpp>
+#if defined(REHAB_V12)
+#include "Rehab/native_access.hpp"
+#endif
 
 [% for intf in interfaces.values() %]
 [% for func in intf.functions.values() %]
@@ -23,6 +26,12 @@ static inline bool [[func.fullname | to_snake_case]]([% for arg in func.in.value
     if (!success) {
         return false;
     }
+[% if not func.fullname.startswith('fibre.Property') and func.name not in ['get_adc_voltage', 'get_gpio_states', 'get_drv_fault', 'get_interrupt_status', 'get_dma_status', 'get_val', 'get_raw_encoder_position', 'get_debug_var'] %]
+#if defined(REHAB_V12)
+    rehab::NativeWriteGuard native_permit;
+    if (!native_permit) return false;
+#endif
+[% endif %]
 [%- if func.implementation %]
     [% if func.out %]std::tuple<[% for arg in func.out.values() %][[arg.type.c_name]][[', ' if not loop.last]][% endfor %]> ret = [% endif %][[func.implementation]]([% for arg in func.in.values() %](*in_[[arg.name]][% if not arg.optional %])[% endif %][[', ' if not loop.last]][% endfor %]);
 [%- else %]

@@ -17,6 +17,11 @@ public:
         void* on_complete_ctx;
         bool is_in_use = false;
         struct SpiTask* next;
+#if defined(REHAB_V12)
+        uint8_t priority = 0; // DRV8301/encoder: 0, network: 3 (lower is first)
+        uint32_t timeout_ms = 10;
+        uint32_t queued_ms = 0; // assigned by the arbiter
+#endif
     };
 
     Stm32SpiArbiter(SPI_HandleTypeDef* hspi): hspi_(hspi) {}
@@ -83,12 +88,40 @@ public:
      * HAL_SPI_RxCpltCallback and HAL_SPI_TxRxCpltCallback.
      */
     void on_complete();
+#if defined(REHAB_V12)
+    bool transfer_priority(SPI_InitTypeDef config, Stm32Gpio ncs_gpio,
+        const uint8_t* tx_buf, uint8_t* rx_buf, size_t length,
+        uint32_t timeout_ms, uint8_t priority);
+    void service(uint32_t now_ms);
+    void on_error();
+    struct Diagnostics {
+        uint32_t timeouts = 0, errors = 0, rejected = 0;
+        uint8_t highwater = 0;
+        bool quarantined = false;
+    };
+    Diagnostics diagnostics() const;
+#endif
 
 private:
     bool start();
     
     SPI_HandleTypeDef* hspi_;
     SpiTask* task_list_ = nullptr;
+#if defined(REHAB_V12)
+    enum class Phase : uint8_t { Idle, Launching, Running, Aborting, Completing };
+    void finish(bool success);
+    bool quiesce();
+    SpiTask* active_ = nullptr;
+    Phase phase_ = Phase::Idle;
+    bool pending_error_ = false, pending_completion_ = false;
+    bool force_reinit_ = false;
+    uint8_t queued_count_ = 0;
+    Diagnostics diagnostics_{};
+    // This arbiter must have static SRAM lifetime, never CCM. DMA only touches
+    // these buffers, including on timeout; caller stack storage is never DMA-owned.
+    alignas(4) uint8_t dma_tx_[260]{};
+    alignas(4) uint8_t dma_rx_[260]{};
+#endif
 };
 
 #endif // __STM32_SPI_ARBITER_HPP

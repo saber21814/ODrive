@@ -21,6 +21,13 @@ ThermistorCurrentLimiter::ThermistorCurrentLimiter(uint16_t adc_channel,
 void ThermistorCurrentLimiter::update() {
     const float normalized_voltage = get_adc_relative_voltage_ch(adc_channel_);
     float raw_temperature_ = horner_poly_eval(normalized_voltage, coefficients_, num_coeffs_);
+#if defined(REHAB_V12)
+    if (adc_channel_ == 15 || adc_channel_ == 5) {
+        // Beta/log calculation runs in the low-rate application service.
+        raw_temperature_ = rehab::platform::fet_temperature_c(normalized_voltage);
+        if (!std::isfinite(raw_temperature_)) { temperature_ = NAN; return; }
+    }
+#endif
 
     constexpr float tau = 0.1f; // [sec]
     float k = current_meas_period / tau;

@@ -1,7 +1,9 @@
 
 #include "interface_i2c.h"
 
+#if !defined(REHAB_V12)
 #include <i2c.h>
+#endif
 
 #define I2C_RX_BUFFER_SIZE 128
 #define I2C_RX_BUFFER_PREAMBLE_SIZE   4

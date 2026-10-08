@@ -1,0 +1,49 @@
+{
+  "status": "software_implemented_and_verified_hardware_locked",
+  "verified_utc": "2026-10-04T04:53:24.772335+00:00",
+  "firmware_source_sha256": "67b906ae8f2d1d5b505c9f3af9b7c7d439d142829c268a751c042d9227995d11",
+  "arm_profiles_passed": 9,
+  "host_suites_passed": 37,
+  "native_test_excluded": "step_cb (8.6 billion iteration case)",
+  "hardware_tested": false,
+  "flashed": false,
+  "gui_implemented": false,
+  "entry": "Rehab/README.md",
+  "verification": "Rehab/docs/verification.md",
+  "resources": "Rehab/docs/resources.md",
+  "full_image": "build/rehab/full/ODriveFirmware.elf",
+  "editor": {
+    "compiler": "C:/Program Files/gcc-arm-none-eabi-7-2018-q2-update-win32/bin/arm-none-eabi-g++.EXE",
+    "main_cpp_arm_syntax": "passed",
+    "problem_panel": "not_directly_observed",
+    "configuration_backup": "build/rehab/editor-before",
+    "user_feedback": "User replied OK after the editor fix.",
+    "host_test_headers_match_arm_headers": true
+  },
+  "plan_audit": {
+    "date": "2026-10-04",
+    "report": "Rehab/docs/plan-audit.md",
+    "strict_acceptance_complete": false,
+    "open_items": [
+      "Physical commissioning and real-target acceptance remain pending by scope; real motor enable remains locked."
+    ],
+    "implementation_difference": "No open structured-command-queue difference; RX byte rings feed an 8-slot application-owned command FIFO.",
+    "software_acceptance_complete": true,
+    "closed_software_items": [
+      "A: real native ingress runtime coverage, 52 complete production functions, 11258 checks",
+      "B: five complete ISR handler-body timing/count channels, 39 model checks",
+      "C: 8-slot complete-command FIFO, bounded dispatch, STOP bypass and fault/transport boundary tests"
+    ]
+  },
+  "host_report_sha256": "7de84b6b62bdfc12f1a6f02ce74f8695c9d6175869143dfb7635eae2d3d72f19",
+  "native_test_alternative": "Actual step_cb/set_step_dir_active: signed boundary cases and 10000 fixed-seed samples in native_ingress; original 2^33-loop case remains excluded.",
+  "final_checks": {
+    "core_baseline_paths": 570,
+    "reviewed_files": 59,
+    "all_artifact_sha256_verified": true,
+    "ingress_provenance_checked": true,
+    "main_cpp_arm_syntax": "passed",
+    "hardware_access": false,
+    "git_diff_check": "Firmware scope passed; pre-existing whitespace in tools/create_can_dbc.py retained unchanged."
+  }
+}
