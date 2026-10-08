@@ -41,5 +41,8 @@
     "**/.tup/**": true,
     "**/build/obj/**": true,
     "**/build/rehab/tests/**": true
-  }
+  },
+  "C_Cpp.default.configurationProvider": "",
+  "C_Cpp.default.compilerPath": "C:/Program Files/gcc-arm-none-eabi-7-2018-q2-update-win32/bin/arm-none-eabi-g++.exe",
+  "C_Cpp.default.intelliSenseMode": "windows-gcc-arm"
 }

@@ -70,6 +70,8 @@ extern I2C_HandleTypeDef hi2c1;
 extern void _Error_Handler(char *, int);
 
 void MX_I2C1_Init(uint8_t addr);
+void MX_I2C1_AS5600_Init(void);
+extern volatile uint8_t i2c1_as5600_master;
 
 /* USER CODE BEGIN Prototypes */
 

@@ -6,6 +6,7 @@ class Encoder;
 #include <board.h> // needed for arm_math.h
 #include <Drivers/STM32/stm32_spi_arbiter.hpp>
 #include "utils.hpp"
+#include "as5600_utils.hpp"
 #include <autogen/interfaces.hpp>
 #include "component.hpp"
 
@@ -13,6 +14,7 @@ class Encoder;
 class Encoder : public ODriveIntf::EncoderIntf {
 public:
     static constexpr uint32_t MODE_FLAG_ABS = 0x100;
+    static constexpr uint8_t AS5600_CALIBRATION_VERSION = 1;
     static constexpr std::array<float, 6> hall_edge_defaults = 
         {0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
 
@@ -37,6 +39,9 @@ public:
         bool enable_phase_interpolation = true; // Use velocity to interpolate inside the count state
         bool find_idx_on_lockin_only = false; // Only be sensitive during lockin scan constant vel state
         bool ignore_illegal_hall_state = false; // dont error on bad states like 000 or 111
+        float phase_delay_compensation = 0.0004f; // AS5600 I2C pipeline delay [s]
+        float as5600_max_mechanical_speed = 20.0f; // physical plausibility limit [turn/s]
+        uint8_t as5600_calibration_version = 0;
         uint8_t hall_polarity = 0;
         bool hall_polarity_calibrated = false;
         std::array<float, 6> hall_edge_phcnt = hall_edge_defaults;
@@ -51,6 +56,18 @@ public:
         void set_find_idx_on_lockin_only(bool value) { find_idx_on_lockin_only = value; parent->set_idx_subscribe(); }
         void set_abs_spi_cs_gpio_pin(uint16_t value) { abs_spi_cs_gpio_pin = value; parent->abs_spi_cs_pin_init(); }
         void set_pre_calibrated(bool value) { pre_calibrated = value; parent->check_pre_calibrated(); }
+        // The calibration version is a firmware-owned safety token. External
+        // clients may clear it to force recalibration, but may never set a
+        // nonzero value and bypass the AS5600 offset-calibration gate. NVM
+        // loading and the internal calibration routine write the field directly.
+        void set_as5600_calibration_version(uint8_t value) {
+            if (value == 0) {
+                as5600_calibration_version = 0;
+                pre_calibrated = false;
+                if (parent && parent->mode_ == MODE_I2C_ABS_AS5600)
+                    parent->is_ready_ = false;
+            }
+        }
         void set_bandwidth(float value) { bandwidth = value; parent->update_pll_gains(); }
     };
 
@@ -83,6 +100,12 @@ public:
     int32_t hall_model(float internal_pos);
     bool update();
 
+    // AS5600 I2C callbacks run in the I2C interrupt and only publish a sample.
+    void as5600_rx_complete();
+    void as5600_i2c_error();
+    void as5600_service_idle();
+    bool as5600_closed_loop_ready() const;
+
     TIM_HandleTypeDef* timer_;
     Stm32Gpio index_gpio_;
     Stm32Gpio hallA_gpio_;
@@ -110,6 +133,21 @@ public:
     float calib_scan_response_ = 0.0f; // debug report from offset calib
     int32_t pos_abs_ = 0;
     float spi_error_rate_ = 0.0f;
+    uint8_t as5600_status_ = 0;
+    float i2c_error_rate_ = 0.0f;
+    float sample_age_ = INFINITY;
+    float as5600_angle_sample_rate_ = 0.0f;
+    float as5600_status_sample_rate_ = 0.0f;
+    uint32_t as5600_busy_skip_count_ = 0;
+    uint32_t as5600_pending_skip_count_ = 0;
+    uint32_t as5600_reanchor_count_ = 0;
+    bool as5600_multiturn_valid_ = false;
+    uint8_t as5600_consecutive_errors_ = 0;
+    uint16_t last_accepted_raw_ = 0;
+    uint32_t last_accepted_tick_ = 0;
+    int32_t raw_delta_ = 0;
+    uint32_t max_abs_raw_delta_ = 0;
+    uint32_t rejected_sample_count_ = 0;
 
     OutputPort<float> pos_estimate_ = 0.0f; // [turn]
     OutputPort<float> vel_estimate_ = 0.0f; // [turn/s]
@@ -144,6 +182,47 @@ public:
     uint16_t abs_spi_dma_tx_[1] = {0xFFFF};
     uint16_t abs_spi_dma_rx_[1];
     Stm32SpiArbiter::SpiTask spi_task_;
+
+    volatile uint8_t as5600_angle_buf_[2] = {0, 0};
+    volatile uint8_t as5600_status_buf_[1] = {0};
+    volatile uint8_t as5600_i2c_pending_ = 0;
+    volatile uint8_t as5600_i2c_request_ = 0;
+    volatile uint32_t as5600_sample_seq_ = 0;
+    volatile uint32_t as5600_status_seq_ = 0;
+    volatile uint32_t as5600_complete_seq_ = 0;
+    volatile uint32_t as5600_failed_seq_ = 0;
+    volatile uint32_t as5600_error_seq_ = 0;
+    volatile uint32_t as5600_busy_skip_seq_ = 0;
+    volatile uint32_t as5600_pending_skip_seq_ = 0;
+    volatile uint32_t as5600_last_sample_tick_ = 0;
+    volatile uint32_t as5600_last_status_tick_ = 0;
+    volatile bool as5600_have_status_ = false;
+    uint32_t as5600_monitor_start_tick_ = 0;
+    uint32_t as5600_seen_sample_seq_ = 0;
+    uint32_t as5600_seen_status_seq_ = 0;
+    uint32_t as5600_seen_complete_seq_ = 0;
+    uint32_t as5600_seen_failed_seq_ = 0;
+    uint32_t as5600_seen_error_seq_ = 0;
+    uint8_t as5600_bad_magnet_count_ = 0;
+    uint8_t as5600_poll_ticks_ = 0;
+    volatile uint8_t as5600_transaction_slot_ = 0;
+    bool as5600_have_sample_ = false;
+    bool as5600_first_sample_ = false;
+    bool as5600_resume_after_recovery_ = false;
+    bool as5600_config_i2c_ok_ = false;
+    volatile bool as5600_recovery_blocked_ = false;
+    volatile bool as5600_recovery_requested_ = false;
+    volatile uint8_t as5600_irq_consecutive_errors_ = 0;
+    uint8_t as5600_consecutive_rejected_samples_ = 0;
+    uint8_t as5600_recovery_attempts_ = 0;
+    uint32_t as5600_recovery_next_tick_ = 0;
+    uint32_t as5600_rate_tick_ = 0;
+    uint32_t as5600_rate_angle_seq_ = 0;
+    uint32_t as5600_rate_status_seq_ = 0;
+
+    bool as5600_start_read(uint8_t reg, uint8_t* buf, uint16_t len, uint8_t request);
+    bool as5600_configure_volatile(void);
+    void as5600_note_i2c_failure(void);
 
     constexpr float getCoggingRatio(){
         return 1.0f / 3600.0f;
