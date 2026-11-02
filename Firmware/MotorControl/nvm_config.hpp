@@ -26,7 +26,9 @@
 
 // IMPORTANT: if you change, reorder or otherwise modify any of the fields in
 // the config structs without changing its total length, make sure to increment this number:
-#if defined(REHAB_V12)
+#if defined(REHAB_V13)
+static constexpr uint16_t config_version = 0x1301;
+#elif defined(REHAB_V12)
 static constexpr uint16_t config_version = 0x1201;
 #else
 static constexpr uint16_t config_version = 0x0001;

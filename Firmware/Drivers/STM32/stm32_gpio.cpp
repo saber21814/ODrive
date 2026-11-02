@@ -212,12 +212,15 @@ void EXTI3_IRQHandler(void) {
 
 /** @brief Entrypoint for the EXTI line 4 interrupt. */
 void EXTI4_IRQHandler(void) {
+#if defined(REHAB_V13)
+    rehab::platform::ScopedIsrTiming isr_timing(REHAB_ISR_EXTI9_5);
+#endif
     maybe_handle(4);
 }
 
 /** @brief Entrypoint for the EXTI lines 5-9 interrupt. */
 void EXTI9_5_IRQHandler(void) {
-#if defined(REHAB_V12)
+#if defined(REHAB_V12) && !defined(REHAB_V13)
     rehab::platform::ScopedIsrTiming isr_timing(REHAB_ISR_EXTI9_5);
 #endif
     maybe_handle(5);

@@ -7,6 +7,10 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#if defined(REHAB_V13)
+#define STOP_GPIO_Port GPIOC
+#define STOP_Pin GPIO_PIN_4
+#endif
 
 struct RuntimeCritical : CriticalSectionContext {};
 #define CRITICAL_SECTION() if (RuntimeCritical runtime_critical_{}; true)

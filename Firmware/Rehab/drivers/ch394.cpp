@@ -15,7 +15,11 @@ constexpr uint16_t sn_tx_free = 0x0020, sn_tx_wr = 0x0024, sn_rx_count = 0x0026,
 const SPI_InitTypeDef spi_config = {
     .Mode = SPI_MODE_MASTER, .Direction = SPI_DIRECTION_2LINES, .DataSize = SPI_DATASIZE_8BIT,
     .CLKPolarity = SPI_POLARITY_LOW, .CLKPhase = SPI_PHASE_1EDGE, .NSS = SPI_NSS_SOFT,
+#if defined(REHAB_V13)
+    .BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32, .FirstBit = SPI_FIRSTBIT_MSB,
+#else
     .BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16, .FirstBit = SPI_FIRSTBIT_MSB,
+#endif
     .TIMode = SPI_TIMODE_DISABLE, .CRCCalculation = SPI_CRCCALCULATION_DISABLE, .CRCPolynomial = 10,
 };
 Stm32Gpio cs{GPIOC, GPIO_PIN_2}, reset{GPIOA, GPIO_PIN_4}, interrupt_pin{GPIOC, GPIO_PIN_8};

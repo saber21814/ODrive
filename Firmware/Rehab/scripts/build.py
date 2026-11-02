@@ -41,10 +41,10 @@ def source_digest():
         digest.update(path.relative_to(ROOT).as_posix().encode());digest.update(path.read_bytes())
     return digest.hexdigest()
 
-def build(profile, jobs=1):
+def build(profile, jobs=1, board='v12'):
     OUT.mkdir(parents=True, exist_ok=True)
-    dest = OUT / profile
-    dest.mkdir(exist_ok=True)
+    dest = (OUT / 'v13' if board == 'v13' and profile != 'baseline' else OUT) / profile
+    dest.mkdir(parents=True, exist_ok=True)
     config = ROOT / 'tup.config'
     previous = config.read_bytes() if config.exists() else None
     if RECOVERY.exists(): raise RuntimeError('Interrupted/concurrent build journal exists; use --recover-config before building.')
@@ -54,7 +54,7 @@ def build(profile, jobs=1):
         keep += ['CONFIG_BOARD_VERSION=v3.6-56V', 'CONFIG_DOCTEST=false', 'CONFIG_DEBUG=false']
     else:
         stage, enabled = PROFILES[profile]
-        keep += ['CONFIG_BOARD_VERSION=rehab-v1.2', 'CONFIG_DOCTEST=false', 'CONFIG_DEBUG=false', f'CONFIG_REHAB_STAGE={stage}', 'CONFIG_REHAB_REAL_MOTOR=false']
+        keep += ['CONFIG_BOARD_VERSION='+('rehab-v1.3' if board == 'v13' else 'rehab-v1.2'), 'CONFIG_DOCTEST=false', 'CONFIG_DEBUG=false', f'CONFIG_REHAB_STAGE={stage}', 'CONFIG_REHAB_REAL_MOTOR=false']
         keep += [f'CONFIG_REHAB_{o}={str(o in enabled.split()).lower()}' for o in OPTIONS]
     print(f'Building {profile}; outputs {dest}', flush=True)
     started = time.time()
@@ -87,10 +87,10 @@ def build(profile, jobs=1):
         shutil.copy2(ROOT/'autogen/endpoints.hpp', dest/'endpoints.hpp')
         if profile=='full':
             from editor import capture
-            capture()
+            capture(board)
         size = subprocess.check_output(['arm-none-eabi-size', str(dest/'ODriveFirmware.elf')], text=True)
         if source_digest()!=source_sha: raise RuntimeError('Firmware sources changed during build; rebuild after edits finish.')
-        report = {'profile':profile, 'status':'passed', 'source_sha256':source_sha, 'elapsed_s':time.time()-started, 'compiler':subprocess.check_output(['arm-none-eabi-gcc','--version'], text=True).splitlines()[0], 'size':size,
+        report = {'profile':profile, 'board':'original' if profile=='baseline' else board, 'status':'passed', 'source_sha256':source_sha, 'elapsed_s':time.time()-started, 'compiler':subprocess.check_output(['arm-none-eabi-gcc','--version'], text=True).splitlines()[0], 'size':size,
                   'real_motor_enabled':None if profile=='baseline' else False,
                   'motion_policy':'original_board_native' if profile=='baseline' else 'rehab_inhibited',
                   'artifact_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in dest.glob('ODriveFirmware.*')}}
@@ -110,10 +110,11 @@ if __name__ == '__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('profile', choices=['baseline',*PROFILES,'all'])
     p.add_argument('--jobs',type=int,choices=range(1,9),default=1,help='Compiler jobs; default 1 for Windows tup reliability.')
+    p.add_argument('--board',choices=['v12','v13'],default='v12',help='Separate Rehab board target and artifact directory.')
     p.add_argument('--recover-config',action='store_true',help='Restore the saved config after a killed build before continuing.')
     a=p.parse_args()
     try:
         if a.recover_config: recover_config()
-        for name in ['baseline',*PROFILES] if a.profile=='all' else [a.profile]: build(name,a.jobs)
+        for name in ['baseline',*PROFILES] if a.profile=='all' else [a.profile]: build(name,a.jobs,a.board)
     except (RuntimeError,subprocess.CalledProcessError) as e:
         print(e,file=sys.stderr);sys.exit(1)

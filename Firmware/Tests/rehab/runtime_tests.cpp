@@ -25,6 +25,22 @@ float vbus_voltage = 24;
 osMessageQId usb_event_queue = reinterpret_cast<void*>(1), uart_event_queue = reinterpret_cast<void*>(2);
 static uint32_t mock_now_ms = 1;
 static unsigned checks = 0, failures = 0, stack_scans = 0;
+static void (*stop_callback)(void*)=nullptr;
+static GPIO_TypeDef* stop_port=nullptr;
+static uint16_t stop_pin=0;
+#if defined(REHAB_V13)
+static bool gate_ready=true;
+static uint32_t gate_generation=0, board_spi_services=0;
+void rehab_board_physical_stop(bool edge) {
+    // Board is separately tested with the actual production gate wrapper.
+    if(edge || gate_ready)++gate_generation;
+    gate_ready=false;
+}
+bool rehab_board_gate_ready() { return gate_ready; }
+uint32_t rehab_board_gate_generation() { return gate_generation; }
+void rehab_board_service_spi(uint32_t now) { ext_spi_arbiter.service(now);++board_spi_services; }
+Stm32SpiArbiter::Diagnostics rehab_board_native_spi_diagnostics() { return {}; }
+#endif
 static void (*clear_injection)() = nullptr;
 struct Event { osMessageQId queue; uint32_t id; };
 static std::vector<Event> events;
@@ -38,7 +54,9 @@ static void check(bool ok, const char* expr, int line) {
 
 uint32_t HAL_GetTick() { return mock_now_ms; }
 bool Stm32Gpio::config(uint32_t,uint32_t,uint32_t) { return true; }
-bool Stm32Gpio::subscribe(bool,bool,void(*)(void*),void*) { return true; }
+bool Stm32Gpio::subscribe(bool,bool,void(*callback)(void*),void*) {
+    stop_callback=callback;stop_port=port_;stop_pin=pin_mask_;return true;
+}
 osThreadId osThreadCreate(const MockThreadDefinition*,void*) { return reinterpret_cast<void*>(3); }
 uint32_t xTaskGetTickCount() { return mock_now_ms; }
 uint32_t uxTaskGetStackHighWaterMark(osThreadId) { ++stack_scans; return 64; }
@@ -62,6 +80,9 @@ static void reset_runtime() {
     axes[0].current_state_ = Axis::AXIS_STATE_IDLE; axes[0].requested_state_ = Axis::AXIS_STATE_UNDEFINED;
     axes[0].step_dir_active_ = false; axes[0].watchdog_feeds = 0;
     mock_rng = MockRng{}; mock_gpio_a.IDR = mock_gpio_b.IDR = mock_gpio_c.IDR = 0;
+#if defined(REHAB_V13)
+    mock_gpio_c.IDR=GPIO_PIN_4;gate_ready=true;gate_generation=board_spi_services=0;
+#endif
     rp::engine.reset(); rp::feedback = rehab::Feedback{}; rp::feedback.timestamp_us = 1000; rp::feedback.vbus_v = 24;
     rp::published = rehab::Status{}; rp::target = rehab::Target{}; rp::latest_force = rehab::ForceSample{};
     rp::limits = rp::Limits{}; rp::owner_session = 0; rp::owner_epoch = 1;
@@ -518,8 +539,35 @@ static void test_partial_frame_fault_boundaries() {
     CHECK(replies(0).empty() && rp::latched);
     submit(0,rw::Command::ClearFaults,session,6);CHECK(result_code(replies(0)[0])==uint32_t(Result::Ok) && !rp::latched);
 }
+#if defined(REHAB_V13)
+static void test_physical_stop_revision() {
+    reset_runtime();rp::early_init();
+    CHECK(stop_port==GPIOC && stop_pin==GPIO_PIN_4 && stop_callback);
+    CHECK(rp::diagnostic_word(63)==0x1301 && rp::diagnostic_word(64)==1 && rp::diagnostic_word(65)==3);
+    CHECK(rp::diagnostic_word(75)==0 && rp::diagnostic_word(76)==1);
+    active_target();motors[0].is_armed_=true;
+    const auto fault_before=rp::fault_generation;
+    mock_gpio_c.IDR=0;stop_callback(nullptr);
+    CHECK(!motors[0].is_armed_ && !gate_ready && rp::latched&rehab::FaultStop);
+    CHECK(rp::fault_generation>fault_before && rp::diagnostic_word(74)==2);
+    const auto epoch=gate_generation;
+    rp::fast_guard();rp::fast_guard();CHECK(gate_generation==epoch);
+    mock_gpio_c.IDR=GPIO_PIN_4;stop_callback(nullptr);
+    CHECK(gate_generation>epoch && rp::latched && !rp::motor_may_arm());
+    // A coalesced low/high pulse still invalidates the DRV cache at ISR entry.
+    gate_ready=true;stop_callback(nullptr);CHECK(!gate_ready && rp::latched);
+    // Startup with an open NC circuit faults immediately; high later never clears it.
+    reset_runtime();mock_gpio_c.IDR=0;rp::early_init();
+    CHECK(rp::latched&rehab::FaultStop && !gate_ready);
+    mock_gpio_c.IDR=GPIO_PIN_4;CHECK(rp::latched && !rp::motor_may_arm());
+    reset_runtime();worker_once();CHECK(board_spi_services==1);
+}
+#endif
 int main() {
     struct Test { const char* name; void (*run)(); } tests[] = {
+#if defined(REHAB_V13)
+        {"V1.3 physical STOP startup/edges/generation",test_physical_stop_revision},
+#endif
         {"hardware lock",test_hardware_lock},{"native arbitration",test_native_arbitration},
         {"diagnostic argument property copy",test_diagnostic_property_argument},
         {"handoff preconditions",test_handoff_preconditions},{"target deadlines",test_deadlines},

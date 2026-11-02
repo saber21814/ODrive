@@ -4,11 +4,62 @@
 #include <cstring>
 
 #if !defined(REHAB_V12)
-#error "V1.2 SPI arbiter must only be built for REHAB_V12"
+#error "Rehab SPI arbiter requires the shared REHAB_V12 integration hooks"
 #endif
 
 namespace {
-Stm32SpiArbiter* spi3_owner = nullptr;
+// One owner for each supported physical bus. The entries cannot be reassigned
+// while their arbiter exists, even when its queue is idle. No bus-wide singleton
+// may redirect a DMA callback to whichever transaction happened to start last.
+struct BusOwner { SPI_HandleTypeDef* spi = nullptr; Stm32SpiArbiter* arbiter = nullptr; };
+BusOwner owners[2];
+struct BusMapping { IRQn_Type tx_irq, rx_irq, spi_irq; unsigned slot; };
+bool mapping(SPI_HandleTypeDef* spi, BusMapping& out) {
+    if (!spi || !spi->hdmatx || !spi->hdmarx
+        || spi->hdmatx->Parent != spi || spi->hdmarx->Parent != spi) return false;
+    if (spi->Instance == SPI3 && spi->hdmarx->Instance == DMA1_Stream0
+        && spi->hdmatx->Instance == DMA1_Stream7
+        && spi->hdmarx->Init.Channel == DMA_CHANNEL_0
+        && spi->hdmatx->Init.Channel == DMA_CHANNEL_0) {
+        out = {DMA1_Stream7_IRQn, DMA1_Stream0_IRQn, SPI3_IRQn, 0}; return true;
+    }
+    if (spi->Instance == SPI1 && spi->hdmarx->Instance == DMA2_Stream2
+        && spi->hdmatx->Instance == DMA2_Stream3
+        && spi->hdmarx->Init.Channel == DMA_CHANNEL_3
+        && spi->hdmatx->Init.Channel == DMA_CHANNEL_3) {
+        out = {DMA2_Stream3_IRQn, DMA2_Stream2_IRQn, SPI1_IRQn, 1}; return true;
+    }
+    // In particular DMA2 Stream0 belongs to ADC1, never to this arbiter.
+    return false;
+}
+bool bind_owner(SPI_HandleTypeDef* spi, Stm32SpiArbiter* arbiter) {
+    BusMapping map{};
+    if (!mapping(spi, map)) return false;
+    for (unsigned i = 0; i < 2; ++i)
+        if (owners[i].arbiter == arbiter && (i != map.slot || owners[i].spi != spi)) return false;
+    auto& entry = owners[map.slot];
+    if (entry.arbiter && (entry.spi != spi || entry.arbiter != arbiter)) return false;
+    entry.spi = spi; entry.arbiter = arbiter;
+    return true;
+}
+Stm32SpiArbiter* dma_owner(DMA_HandleTypeDef* dma, SPI_HandleTypeDef*& spi, BusMapping& map) {
+    if (!dma || !dma->Parent) return nullptr;
+    for (unsigned i = 0; i < 2; ++i) {
+        const auto& entry = owners[i];
+        if (entry.arbiter && entry.spi == dma->Parent && mapping(entry.spi, map) && map.slot == i
+            && (dma == entry.spi->hdmarx || dma == entry.spi->hdmatx)) {
+            spi = entry.spi; return entry.arbiter;
+        }
+    }
+    return nullptr;
+}
+bool owns_bus(SPI_HandleTypeDef* spi, Stm32SpiArbiter* arbiter, BusMapping& map) {
+    return mapping(spi, map) && owners[map.slot].spi == spi && owners[map.slot].arbiter == arbiter;
+}
+void clear_dma_flags(DMA_HandleTypeDef* dma) {
+    __HAL_DMA_CLEAR_FLAG(dma, __HAL_DMA_GET_TC_FLAG_INDEX(dma) | __HAL_DMA_GET_HT_FLAG_INDEX(dma)
+        | __HAL_DMA_GET_TE_FLAG_INDEX(dma) | __HAL_DMA_GET_DME_FLAG_INDEX(dma) | __HAL_DMA_GET_FE_FLAG_INDEX(dma));
+}
 bool same_config(const SPI_InitTypeDef& a, const SPI_InitTypeDef& b) {
     return a.Mode == b.Mode && a.Direction == b.Direction && a.DataSize == b.DataSize
         && a.CLKPolarity == b.CLKPolarity && a.CLKPhase == b.CLKPhase && a.NSS == b.NSS
@@ -19,28 +70,25 @@ bool same_config(const SPI_InitTypeDef& a, const SPI_InitTypeDef& b) {
 size_t byte_count(const Stm32SpiArbiter::SpiTask& t) {
     return t.length * (t.config.DataSize == SPI_DATASIZE_16BIT ? 2u : 1u);
 }
-IRQn_Type dma_irq(DMA_Stream_TypeDef* stream) {
-    if (stream == DMA1_Stream0) return DMA1_Stream0_IRQn;
-    if (stream == DMA1_Stream1) return DMA1_Stream1_IRQn;
-    if (stream == DMA1_Stream2) return DMA1_Stream2_IRQn;
-    if (stream == DMA1_Stream3) return DMA1_Stream3_IRQn;
-    if (stream == DMA1_Stream4) return DMA1_Stream4_IRQn;
-    if (stream == DMA1_Stream5) return DMA1_Stream5_IRQn;
-    if (stream == DMA1_Stream6) return DMA1_Stream6_IRQn;
-    return DMA1_Stream7_IRQn;
-}
 void callback(Stm32SpiArbiter::SpiTask* task, bool success) {
     // Read everything before the callback: it may immediately reuse/free task.
     const auto fn = task->on_complete;
     void* const ctx = task->on_complete_ctx;
     if (fn) fn(ctx, success);
 }
-void dma_error(DMA_HandleTypeDef*) {
-    if (spi3_owner) spi3_owner->on_error();
+void dma_error(DMA_HandleTypeDef* dma) {
+    SPI_HandleTypeDef* spi = nullptr; BusMapping map{};
+    if (auto* owner = dma_owner(dma, spi, map)) {
+        if (dma->ErrorCode != HAL_DMA_ERROR_NONE) owner->on_error();
+    }
 }
 void dma_complete(DMA_HandleTypeDef* dma) {
-    auto* spi = static_cast<SPI_HandleTypeDef*>(dma->Parent);
-    if (!spi3_owner || spi->Instance != SPI3) return;
+    SPI_HandleTypeDef* spi = nullptr; BusMapping map{};
+    auto* owner = dma_owner(dma, spi, map);
+    if (!owner || dma != spi->hdmarx) return;
+    // An RX completion from a retired transfer cannot complete or poison the
+    // newly launched transfer. HAL has disabled its stream before a valid TC.
+    if (dma->Instance->CR & DMA_SxCR_EN) return;
     // The vendor SPI callback waits up to 100 ms for BSY in an IRQ. Replace it
     // with a fixed instruction budget; an abnormal bus goes to task recovery.
     unsigned remaining = 128;
@@ -50,19 +98,26 @@ void dma_complete(DMA_HandleTypeDef* dma) {
         || spi->hdmatx->ErrorCode != HAL_DMA_ERROR_NONE
         || spi->hdmarx->ErrorCode != HAL_DMA_ERROR_NONE
         || ((spi->hdmatx->Instance->CR | spi->hdmarx->Instance->CR) & DMA_SxCR_EN)) {
-        spi3_owner->on_error(); return;
+        owner->on_error(); return;
     }
     // RX completed last on the wire. A lower-priority TX IRQ may still be
     // pending; retire it before any next transaction can install callbacks.
     auto* tx = spi->hdmatx;
     __HAL_DMA_CLEAR_FLAG(tx, __HAL_DMA_GET_TC_FLAG_INDEX(tx) | __HAL_DMA_GET_HT_FLAG_INDEX(tx));
-    NVIC_ClearPendingIRQ(dma_irq(tx->Instance));
+    NVIC_ClearPendingIRQ(map.tx_irq);
     tx->State = HAL_DMA_STATE_READY; tx->Lock = HAL_UNLOCKED;
     spi->TxXferCount = spi->RxXferCount = 0;
     spi->State = HAL_SPI_STATE_READY;
-    if (spi->ErrorCode != HAL_SPI_ERROR_NONE) spi3_owner->on_error();
-    else spi3_owner->on_complete();
+    if (spi->ErrorCode != HAL_SPI_ERROR_NONE) owner->on_error();
+    else owner->on_complete();
 }
+}
+
+Stm32SpiArbiter::~Stm32SpiArbiter() {
+    // Board arbiters have static SRAM lifetime. Unregistering also permits
+    // isolated host fixtures; destroying an arbiter with live tasks is invalid.
+    CriticalSectionContext lock;
+    for (auto& entry : owners) if (entry.arbiter == this) entry = BusOwner{};
 }
 
 bool Stm32SpiArbiter::acquire_task(SpiTask* task) {
@@ -86,7 +141,7 @@ void Stm32SpiArbiter::transfer_async(SpiTask* task) {
         if (task == active_) { ++diagnostics_.rejected; return; }
         for (SpiTask* q = task_list_; q; q = q->next)
             if (q == task) { ++diagnostics_.rejected; return; }
-        reject = diagnostics_.quarantined || queued_count_ >= 8 || !task->length
+        reject = !bind_owner(hspi_, this) || diagnostics_.quarantined || queued_count_ >= 8 || !task->length
             || task->length > 260 || byte_count(*task) > sizeof(dma_tx_)
             || (!task->tx_buf && !task->rx_buf) || !task->ncs_gpio
             || (task->config.DataSize != SPI_DATASIZE_8BIT && task->config.DataSize != SPI_DATASIZE_16BIT);
@@ -128,8 +183,9 @@ bool Stm32SpiArbiter::start() {
     const size_t bytes = byte_count(*task);
     if (task->tx_buf) std::memcpy(dma_tx_, task->tx_buf, bytes);
     else std::memset(dma_tx_, 0xff, bytes);
-    HAL_StatusTypeDef status = HAL_OK;
-    if (force_reinit_ || !same_config(task->config, hspi_->Init)) {
+    BusMapping map{};
+    HAL_StatusTypeDef status = owns_bus(hspi_, this, map) ? HAL_OK : HAL_ERROR;
+    if (status == HAL_OK && (force_reinit_ || !same_config(task->config, hspi_->Init))) {
         status = HAL_SPI_DeInit(hspi_);
         hspi_->Init = task->config;
         if (status == HAL_OK) status = HAL_SPI_Init(hspi_);
@@ -137,13 +193,20 @@ bool Stm32SpiArbiter::start() {
     }
     if (status == HAL_OK && hspi_->hdmatx && hspi_->hdmarx
         && hspi_->hdmatx->State == HAL_DMA_STATE_READY && hspi_->hdmarx->State == HAL_DMA_STATE_READY) {
-        const IRQn_Type tx_irq = dma_irq(hspi_->hdmatx->Instance);
-        const IRQn_Type rx_irq = dma_irq(hspi_->hdmarx->Instance);
+        // Recheck MSP output: an unexpected stream must never receive IRQ or
+        // register writes, even if HAL initialization silently changed it.
+        if (!owns_bus(hspi_, this, map)) status = HAL_ERROR;
+    } else status = HAL_ERROR;
+    if (status == HAL_OK) {
+        const IRQn_Type tx_irq = map.tx_irq;
+        const IRQn_Type rx_irq = map.rx_irq;
         const bool tx_enabled = NVIC->ISER[static_cast<uint32_t>(tx_irq) >> 5] & (1u << (static_cast<uint32_t>(tx_irq) & 31));
         const bool rx_enabled = NVIC->ISER[static_cast<uint32_t>(rx_irq) >> 5] & (1u << (static_cast<uint32_t>(rx_irq) & 31));
         NVIC_DisableIRQ(tx_irq); NVIC_DisableIRQ(rx_irq);
         __DSB(); __ISB();
-        spi3_owner = this;
+        // Retire old flags and pending IRQs before installing a new transfer.
+        clear_dma_flags(hspi_->hdmatx); clear_dma_flags(hspi_->hdmarx);
+        NVIC_ClearPendingIRQ(tx_irq); NVIC_ClearPendingIRQ(rx_irq);
         task->ncs_gpio.write(false);
         // Full duplex even for write-only requests drains RX and avoids OVR.
         status = HAL_SPI_TransmitReceive_DMA(hspi_, dma_tx_, dma_rx_, task->length);
@@ -178,11 +241,12 @@ bool Stm32SpiArbiter::start() {
 }
 
 bool Stm32SpiArbiter::quiesce() {
-    // Only SPI3/DMA1 is supported by this board. Refuse to operate an unexpected
-    // peripheral instead of disabling an unrelated interrupt.
-    if (hspi_->Instance != SPI3 || !hspi_->hdmatx || !hspi_->hdmarx) return false;
+    // Validate the complete mapping before touching any register or IRQ. Each
+    // recovery owns only its peripheral and two streams, including on DMA2.
+    BusMapping map{};
+    if (!owns_bus(hspi_, this, map)) return false;
     DMA_HandleTypeDef* streams[] = { hspi_->hdmatx, hspi_->hdmarx };
-    const IRQn_Type irqs[] = { dma_irq(streams[0]->Instance), dma_irq(streams[1]->Instance), SPI3_IRQn };
+    const IRQn_Type irqs[] = { map.tx_irq, map.rx_irq, map.spi_irq };
     bool enabled[3];
     for (unsigned i = 0; i < 3; ++i) {
         enabled[i] = (NVIC->ISER[static_cast<uint32_t>(irqs[i]) >> 5]
@@ -202,8 +266,7 @@ bool Stm32SpiArbiter::quiesce() {
     while (remaining-- && ((streams[0]->Instance->CR | streams[1]->Instance->CR) & DMA_SxCR_EN)) __NOP();
     const bool stopped = !((streams[0]->Instance->CR | streams[1]->Instance->CR) & DMA_SxCR_EN);
     for (auto* dma : streams) {
-        __HAL_DMA_CLEAR_FLAG(dma, __HAL_DMA_GET_TC_FLAG_INDEX(dma) | __HAL_DMA_GET_HT_FLAG_INDEX(dma)
-            | __HAL_DMA_GET_TE_FLAG_INDEX(dma) | __HAL_DMA_GET_DME_FLAG_INDEX(dma) | __HAL_DMA_GET_FE_FLAG_INDEX(dma));
+        clear_dma_flags(dma);
         if (stopped) { dma->State = HAL_DMA_STATE_READY; dma->ErrorCode = HAL_DMA_ERROR_NONE; dma->Lock = HAL_UNLOCKED; }
     }
     __HAL_SPI_CLEAR_OVRFLAG(hspi_);
@@ -226,6 +289,10 @@ void Stm32SpiArbiter::finish(bool success) {
     {
         CriticalSectionContext lock;
         if (!active_ || (phase_ != Phase::Running && phase_ != Phase::Aborting)) return;
+        // A higher-priority TX DMA error can preempt the RX completion between
+        // on_complete() and this commit. Keep the task owned until task-context
+        // service() quiesces this bus and delivers exactly one failure.
+        if (success && pending_error_) return;
         phase_ = Phase::Completing;
         task = active_;
         active_ = nullptr;

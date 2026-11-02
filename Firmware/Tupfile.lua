@@ -282,6 +282,15 @@ for _, name in ipairs(board_v3.code_files) do
     if name ~= 'Src/i2c.c' then table.insert(board_rehab_v12.code_files, name) end
 end
 
+-- REHAB_V12 is the shared integration ABI; REHAB_V13 selects the pin revision.
+board_rehab_v13 = {
+    root = 'Board/rehab_v13', root_interface = 'ODriveRehabV12',
+    include = {stm32f4xx_hal_pkg}, include_dirs = board_v3.include_dirs,
+    code_files = board_rehab_v12.code_files,
+    cflags = {'-DSTM32F405xx', '-DHW_VERSION_MAJOR=3', '-DREHAB_V12=1', '-DREHAB_V13=1'},
+    ldflags = {'-TBoard/rehab_v13/STM32F405RGTx_FLASH.ld', '-larm_cortexM4lf_math'},
+}
+
 board_v4 = {
     root = 'Private/v4',
     root_interface = 'ODrive4',
@@ -325,6 +334,7 @@ board_v4 = {
 }
 
 boards = {
+    ["rehab-v1.3"] = {include={board_rehab_v13}, cflags={"-DHW_VERSION_MINOR=13 -DHW_VERSION_VOLTAGE=0"}},
     ["rehab-v1.2"] = {include={board_rehab_v12}, cflags={"-DHW_VERSION_MINOR=12 -DHW_VERSION_VOLTAGE=0"}},
     ["v3.1"] = {include={board_v3}, cflags={"-DHW_VERSION_MINOR=1 -DHW_VERSION_VOLTAGE=24"}},
     ["v3.2"] = {include={board_v3}, cflags={"-DHW_VERSION_MINOR=2 -DHW_VERSION_VOLTAGE=24"}},
@@ -384,7 +394,7 @@ elseif boards[boardversion] == nil then
 end
 board = boards[boardversion]
 
-if boardversion == 'rehab-v1.2' then
+if boardversion == 'rehab-v1.2' or boardversion == 'rehab-v1.3' then
     CFLAGS += '-IDrivers/STM32'
     for i, name in ipairs(odrive_firmware_pkg.code_files) do
         if name == 'Drivers/STM32/stm32_spi_arbiter.cpp' then
@@ -457,8 +467,8 @@ print('Using python command "'..python_command..'"')
 -- Autogen files from YAML interface definitions
 root_interface = board.include[1].root_interface
 definitions = 'odrive-interface.yaml'
-if boardversion == 'rehab-v1.2' then
-    tup.frule{inputs={'odrive-interface.yaml','Rehab/interface.py'}, command=python_command..' Rehab/interface.py --output %o', outputs='autogen/rehab-interface.yaml'}
+if boardversion == 'rehab-v1.2' or boardversion == 'rehab-v1.3' then
+    tup.frule{inputs={'odrive-interface.yaml','Rehab/interface.py'}, command=python_command..' Rehab/interface.py --board '..(boardversion == 'rehab-v1.3' and 'v13' or 'v12')..' --output %o', outputs='autogen/rehab-interface.yaml'}
     definitions = 'autogen/rehab-interface.yaml'
 end
 tup.frule{inputs={'fibre-cpp/interfaces_template.j2', extra_inputs=definitions}, command=python_command..' interface_generator_stub.py --definitions '..definitions..' --template %f --output %o', outputs='autogen/interfaces.hpp'}

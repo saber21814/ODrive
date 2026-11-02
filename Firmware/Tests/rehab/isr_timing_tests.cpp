@@ -31,7 +31,8 @@ static void cpp_style_irq(bool early_return, uint32_t cycles) {
 int main() {
     static_assert(REHAB_ISR_CONTROL_LOOP == 0 && REHAB_ISR_TIM8_UPDATE == 1 &&
         REHAB_ISR_SPI_DMA_TX == 2 && REHAB_ISR_SPI_DMA_RX == 3 &&
-        REHAB_ISR_EXTI9_5 == 4 && REHAB_ISR_CHANNEL_COUNT == 5,
+        REHAB_ISR_EXTI9_5 == 4 && REHAB_ISR_SPI1_DMA_TX == 5 &&
+        REHAB_ISR_SPI1_DMA_RX == 6 && REHAB_ISR_CHANNEL_COUNT == 7,
         "diagnostic channel order is a stable interface");
     static_assert(!std::is_copy_constructible<rehab::platform::ScopedIsrTiming>::value,
         "copying a scope would double-count an interrupt");

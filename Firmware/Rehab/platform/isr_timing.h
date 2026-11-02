@@ -7,14 +7,17 @@
 extern "C" {
 #endif
 
-/* Stable diagnostic order: maximum cycles [0..4], invocation counts [0..4]. */
+/* Existing channels 0..4 keep their order; SPI1 telemetry is appended at 5/6.
+ * Slot4 measures V1.2 EXTI9_5 or V1.3 STOP EXTI4, one writer per board. */
 typedef enum RehabIsrChannel {
     REHAB_ISR_CONTROL_LOOP = 0,
     REHAB_ISR_TIM8_UPDATE = 1,
     REHAB_ISR_SPI_DMA_TX = 2,
     REHAB_ISR_SPI_DMA_RX = 3,
     REHAB_ISR_EXTI9_5 = 4,
-    REHAB_ISR_CHANNEL_COUNT = 5
+    REHAB_ISR_SPI1_DMA_TX = 5,
+    REHAB_ISR_SPI1_DMA_RX = 6,
+    REHAB_ISR_CHANNEL_COUNT = 7
 } RehabIsrChannel;
 
 /* DWT must already be enabled by V1.2 early_init(). Each channel has exactly

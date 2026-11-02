@@ -67,6 +67,27 @@ public:
     uint32_t get_isr_spi_tx_count() const { return diagnostic_word(60); }
     uint32_t get_isr_spi_rx_count() const { return diagnostic_word(61); }
     uint32_t get_isr_stop_count() const { return diagnostic_word(62); }
+#if defined(REHAB_V13)
+    uint32_t get_board_revision() const { return diagnostic_word(63); }
+    uint32_t get_network_spi_bus() const { return diagnostic_word(64); }
+    uint32_t get_native_spi_bus() const { return diagnostic_word(65); }
+    uint32_t get_native_spi_timeouts() const { return diagnostic_word(66); }
+    uint32_t get_native_spi_errors() const { return diagnostic_word(67); }
+    uint32_t get_native_spi_rejected() const { return diagnostic_word(68); }
+    uint32_t get_native_spi_highwater() const { return diagnostic_word(69); }
+    uint32_t get_native_spi_quarantined() const { return diagnostic_word(70); }
+    uint32_t get_gate_ready() const { return diagnostic_word(71); }
+    uint32_t get_gate_generation() const { return diagnostic_word(72); }
+    uint32_t get_physical_stop() const { return diagnostic_word(73); }
+    uint32_t get_brake_settled_path() const { return diagnostic_word(74); }
+    uint32_t get_software_brake_enabled() const { return diagnostic_word(75); }
+    uint32_t get_hardware_stop_brake_present() const { return diagnostic_word(76); }
+    uint32_t get_isr_spi1_tx_max_cycles() const { return diagnostic_word(77); }
+    uint32_t get_isr_spi1_rx_max_cycles() const { return diagnostic_word(78); }
+    uint32_t get_isr_spi1_tx_count() const { return diagnostic_word(79); }
+    uint32_t get_isr_spi1_rx_count() const { return diagnostic_word(80); }
+    float get_aux_temperature_c() const { return diagnostic_float(10); }
+#endif
     float get_length_m() const { return diagnostic_float(0); }
     float get_speed_m_s() const { return diagnostic_float(1); }
     float get_force_n() const { return diagnostic_float(2); }

@@ -10,7 +10,7 @@ inline bool mock_dwt_running = true;
 struct MockCounter { mutable uint32_t cycles = 0; operator uint32_t() const { if (mock_dwt_running) cycles += mock_cycle_step; return cycles; } };
 struct MockDwt { uint32_t CTRL = 0; MockCounter CYCCNT; };
 struct MockCoreDebug { uint32_t DEMCR = 0; };
-struct MockNvic { uint32_t ISER[8]{}; uint32_t pending = 0; };
+struct MockNvic { uint32_t ISER[8]{}; uint64_t pending = 0; };
 extern MockDwt mock_dwt;
 extern MockCoreDebug mock_debug;
 extern MockNvic mock_nvic;
@@ -23,7 +23,7 @@ constexpr uint32_t SystemCoreClock = 168000000;
 inline void __NOP() { if (mock_dwt_running) ++mock_dwt.CYCCNT.cycles; }
 inline void NVIC_DisableIRQ(IRQn_Type irq) { mock_nvic.ISER[irq >> 5] &= ~(1u << (irq & 31)); }
 inline void NVIC_EnableIRQ(IRQn_Type irq) { mock_nvic.ISER[irq >> 5] |= 1u << (irq & 31); }
-inline void NVIC_ClearPendingIRQ(IRQn_Type irq) { mock_nvic.pending &= ~(1u << irq); }
+inline void NVIC_ClearPendingIRQ(IRQn_Type irq) { mock_nvic.pending &= ~(uint64_t{1} << irq); }
 struct CriticalSectionContext {
     inline static void (*before_enter)() = nullptr;
     uint32_t previous;

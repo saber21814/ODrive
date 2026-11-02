@@ -25,6 +25,11 @@ public:
     };
 
     Stm32SpiArbiter(SPI_HandleTypeDef* hspi): hspi_(hspi) {}
+#if defined(REHAB_V12)
+    ~Stm32SpiArbiter();
+    Stm32SpiArbiter(const Stm32SpiArbiter&) = delete;
+    Stm32SpiArbiter& operator=(const Stm32SpiArbiter&) = delete;
+#endif
 
     /**
      * Reserves the task for the caller if it's not in use currently.

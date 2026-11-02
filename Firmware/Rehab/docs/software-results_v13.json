@@ -1,0 +1,213 @@
+{
+  "date": "2026-10-29",
+  "source_sha256": "bf0834c01970cb15aa4d451dccdd11c16874e1ae4d9d1329383cbbacc29b758f",
+  "inherited_head": "0509745812bb790b5931e3273a760347b137db86",
+  "host": {
+    "passed": 44,
+    "failed": 0,
+    "skipped": 0,
+    "total": 44
+  },
+  "arm_build_count": 17,
+  "arm_artifact_hashes_verified": true,
+  "resources_passed": true,
+  "compatibility": {
+    "v12_schema_byte_identical": true,
+    "existing_diagnostics_order_preserved": true,
+    "old_attributes": 73,
+    "new_attributes": 92,
+    "protocol_files_unchanged": [
+      "Firmware/Rehab/protocol/command_queue.hpp",
+      "Firmware/Rehab/protocol/config_fields.cpp",
+      "Firmware/Rehab/protocol/config_fields.hpp",
+      "Firmware/Rehab/protocol/frame.cpp",
+      "Firmware/Rehab/protocol/frame.hpp",
+      "Firmware/Rehab/protocol/service.cpp",
+      "Firmware/Rehab/protocol/service.hpp"
+    ]
+  },
+  "independent_review_passed": true,
+  "reviewed_integration_files": 78,
+  "tup_config_restored": true,
+  "hardware_access": false,
+  "rehab_real_motor_locked": true,
+  "pcb_drc": "not_completed",
+  "physical_acceptance": "pending",
+  "artifacts": [
+    {
+      "board": "original",
+      "profile": "baseline",
+      "status": "passed",
+      "flash_bytes": 359048,
+      "sram_reserved_bytes": 81724,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": null,
+      "elf_sha256": "f0a8130dfd4969c35114e4c63afaf635f944329f58ab0e3488fca3e1f58d51ae"
+    },
+    {
+      "board": "v13",
+      "profile": "native",
+      "status": "passed",
+      "flash_bytes": 337768,
+      "sram_reserved_bytes": 65988,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "15a68da40ff1c4d793a7506bf57955294ca436985aea0ec24838980fa06c2b60"
+    },
+    {
+      "board": "v13",
+      "profile": "hx711",
+      "status": "passed",
+      "flash_bytes": 338956,
+      "sram_reserved_bytes": 66068,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "ffbbc8ed136c07e71938e4687b8c2750bb3a27c2685e0eb5b69d7226f766e44d"
+    },
+    {
+      "board": "v13",
+      "profile": "network",
+      "status": "passed",
+      "flash_bytes": 355196,
+      "sram_reserved_bytes": 85580,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "e1ba60fdc675961785b2aa98478a2ef0baba8b473949b28b40b8ef075b019134"
+    },
+    {
+      "board": "v13",
+      "profile": "peripherals",
+      "status": "passed",
+      "flash_bytes": 356240,
+      "sram_reserved_bytes": 85644,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "34b3b8dee6e0970cf414e811aa1dbf24ea037ea031eb8e39180950f46d037b9e"
+    },
+    {
+      "board": "v13",
+      "profile": "protection",
+      "status": "passed",
+      "flash_bytes": 362512,
+      "sram_reserved_bytes": 85748,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "2f333da95b8a652486deeb3f6c5f2dd6ab0d09b0efb908bbd384652ce4e4dffa"
+    },
+    {
+      "board": "v13",
+      "profile": "training",
+      "status": "passed",
+      "flash_bytes": 363032,
+      "sram_reserved_bytes": 85748,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "2a6128ad8aff9fe27859574b52aee0b344618c62c312b2f1625247de13cf09be"
+    },
+    {
+      "board": "v13",
+      "profile": "statistics",
+      "status": "passed",
+      "flash_bytes": 364224,
+      "sram_reserved_bytes": 85748,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "890ae52d4a96b82d671c97765085c61d125f96c34a4b9d8687d83d5f21905992"
+    },
+    {
+      "board": "v13",
+      "profile": "full",
+      "status": "passed",
+      "flash_bytes": 364464,
+      "sram_reserved_bytes": 85748,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "1da1422d181ac5e02d259db911d6abfc375bd76ca721125c816e47cbab86a6c8"
+    },
+    {
+      "board": "v12",
+      "profile": "native",
+      "status": "passed",
+      "flash_bytes": 331220,
+      "sram_reserved_bytes": 65100,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "6a410c94df5ce70525f7d46ceceee41bca16e7bc4aa0e8f0d4ab95d4bb9d4927"
+    },
+    {
+      "board": "v12",
+      "profile": "hx711",
+      "status": "passed",
+      "flash_bytes": 332336,
+      "sram_reserved_bytes": 65180,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "1ecd8a548fab21a295a663fdba0d1a334c943c935b75811ea1590d674abbe2ed"
+    },
+    {
+      "board": "v12",
+      "profile": "network",
+      "status": "passed",
+      "flash_bytes": 348536,
+      "sram_reserved_bytes": 84692,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "5eed152486c82c387b34c28960f4420f626d6102ba377ffe58327fcc897ebe57"
+    },
+    {
+      "board": "v12",
+      "profile": "peripherals",
+      "status": "passed",
+      "flash_bytes": 349580,
+      "sram_reserved_bytes": 84756,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "e778fa0d329a78f6ca75748cbd56bb85f49b7dd6ed18041a1620ad0cf31bf97b"
+    },
+    {
+      "board": "v12",
+      "profile": "protection",
+      "status": "passed",
+      "flash_bytes": 355876,
+      "sram_reserved_bytes": 84868,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "2ae43823e1a1d9963180b19bef091b5d40623abd2f82198ca41c6053ae09b8dc"
+    },
+    {
+      "board": "v12",
+      "profile": "training",
+      "status": "passed",
+      "flash_bytes": 356396,
+      "sram_reserved_bytes": 84868,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "2206543aa595cc5cfdef8bb1c1e554c86903f7b4dd0ffa4eaf7ab60f1b5bc671"
+    },
+    {
+      "board": "v12",
+      "profile": "statistics",
+      "status": "passed",
+      "flash_bytes": 357588,
+      "sram_reserved_bytes": 84868,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "8df54df8bc188966fc131d8aeb364bbe5007b27a0435440ada2183ce48b51372"
+    },
+    {
+      "board": "v12",
+      "profile": "full",
+      "status": "passed",
+      "flash_bytes": 357820,
+      "sram_reserved_bytes": 84868,
+      "ccm_heap_bytes": 65536,
+      "real_motor_enabled": false,
+      "elf_sha256": "aaccc9e8adc86247b7760ab40763258a380add67ac9a423bb104fb4562b36f8d"
+    }
+  ],
+  "limits": [
+    "Native step_cb 2^33 loop excluded; bounded production-function regression was run.",
+    "Host HAL and DRV carriers do not validate physical timing.",
+    "Two compiler out-of-memory failures were preserved in attempt-oom.log; serial retries passed."
+  ]
+}

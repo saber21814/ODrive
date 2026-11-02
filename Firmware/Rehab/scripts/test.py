@@ -121,12 +121,12 @@ def specifications(quick):
         "REHAB_ENABLE_STATISTICS=1", "REHAB_ENABLE_TRAINING=1",
         "REHAB_ENABLE_COMPENSATION=1", "REHAB_STAGE=6",
     ]
-    for real_motor in (0, 1):
+    for board, real_motor in itertools.product(('v12','v13'), (0,1)):
         suites.append(suite(
-            "runtime" if not real_motor else "runtime_real_flag",
+            ("runtime" if not real_motor else "runtime_real_flag")+('_v13' if board=='v13' else ''),
             ["Tests/rehab/runtime_tests.cpp", "Rehab/platform/isr_timing.cpp"] + SERVICE,
             flags=GNU_STRICT,
-            definitions=runtime_definitions + ["REHAB_REAL_MOTOR={}".format(real_motor)],
+            definitions=runtime_definitions + ["REHAB_REAL_MOTOR={}".format(real_motor)] + (["REHAB_V13=1"] if board=='v13' else []),
             includes=["Tests/rehab/runtime_mocks", "Tests/rehab/driver_mocks",
                       "Drivers/STM32", "fibre-cpp/include", "."],
             production=SERVICE + ["Rehab/platform/runtime.cpp", "fibre-cpp/protocol.hpp"],
@@ -157,15 +157,30 @@ def specifications(quick):
         production=["Rehab/platform/stream.cpp", "fibre-cpp/include/fibre/async_stream.hpp"],
         notes=["Actual Stream adapter and Fibre async interfaces; endpoint and byte-queue carriers test partial transfers, reconnects and delayed completion callbacks."],
     ))
-    for rehab in (False, True):
+    for board in ('native','v12','v13'):
         suites.append(suite(
-            "nvm_rehab" if rehab else "nvm_native", ["Tests/rehab/nvm_tests.cpp"],
+            {'native':'nvm_native','v12':'nvm_rehab','v13':'nvm_rehab_v13'}[board], ["Tests/rehab/nvm_tests.cpp"],
             includes=[".", "fibre-cpp/include"],
-            definitions=["REHAB_V12=1"] if rehab else [],
+            definitions=(["REHAB_V12=1"] if board!='native' else [])+(["REHAB_V13=1"] if board=='v13' else []),
             production=["MotorControl/nvm_config.hpp", "Drivers/STM32/stm32_nvm.h", "fibre-cpp/crc.hpp"],
             notes=["Actual ConfigManager and CRC implementation with an in-memory NVM carrier; tests two-pass persistence, version-specific CRC seeds, truncation, corruption and interrupted writes."],
         ))
 
+    suites.append(suite('temperature_v13',['Tests/rehab/temperature_tests.cpp'],
+        definitions=['REHAB_V13=1'],production=['Rehab/platform/temperature.hpp','Rehab/platform/commissioning.hpp']))
+    suites.append(suite('v13_gate',['Tests/rehab/v13_gate_tests.cpp'],
+        includes=['Tests/rehab/v13_gate_mocks','.'],
+        production=['Rehab/drivers/v13_gate_driver.hpp'],
+        notes=['Actual V1.3 wrapper with a native-driver carrier; real DRV SPI writes/readbacks also covered by ARM compilation, physical behavior remains unverified.']))
+    contract=suite('v13_board_contract',['Tests/rehab/v13_board_contract_test.py'],
+        notes=['Static production-source contract: pin/ADC/DMA ownership and cold-boot ordering; not measured MCU behavior.'])
+    contract['python']=True
+    suites.append(contract)
+    protection=suite('core_protection_v13',['Tests/rehab/core_protection_v13_tests.py'],
+        production=['Rehab/scripts/core_protection_v13.py'],
+        notes=['Actual guard with injected Git/hash results; rejects staged core additions and protected-file changes without changing the filesystem/index.'])
+    protection['python']=True
+    suites.append(protection)
     native_sources = sorted(relative(path) for path in (ROOT / "Tests").glob("*.cpp"))
     native = suite(
         "native", native_sources,
@@ -251,6 +266,13 @@ def run_suite(specification, compiler, environment):
     if "skip_reason" in specification:
         result["status"] = "skipped"
         print("SKIP {}: {}".format(name, specification["skip_reason"]), flush=True)
+        return result
+    if specification.get('python'):
+        result['run']=execute([sys.executable,'-B',*specification['sources']],
+            LOGS/(name+'.run.log'),environment,specification['run_timeout_s'])
+        result['status']=result['run']['status']
+        print(('PASS' if result['status']=='passed' else 'FAIL')+' '+name,flush=True)
+        if result['status']!='passed': print(log_tail(LOGS/(name+'.run.log')),flush=True)
         return result
     if name=="native_ingress":
         result["prepare"]=execute(

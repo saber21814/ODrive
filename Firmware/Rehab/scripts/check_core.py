@@ -35,7 +35,11 @@ def digest(path):
 
 
 def main():
+    if '--legacy' not in sys.argv and (REPO/'analysis/rehab_v13_baseline/manifest.json').is_file():
+        from core_protection_v13 import main as v13_main
+        return v13_main()
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--legacy',action='store_true',help='Run the historical pre-merge check without inherited-delta accounting.')
     p.add_argument('--freeze', action='store_true', help='Record reviewed hook/board hashes AFTER review; never run automatically.')
     a = p.parse_args()
     baseline = json.loads((BASE / 'manifest.json').read_text(encoding='utf-8'))
