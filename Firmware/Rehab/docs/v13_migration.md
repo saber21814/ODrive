@@ -49,7 +49,37 @@ num_jobs = 1
 该设置只影响本工程的构建并发，不改固件源码、原 Makefile 或编译器头文件；依据 [Tup 官方选项说明](https://gittup.org/tup/manual.html)。`.tup` 不受 Git 跟踪，重新克隆或重建该目录时需重新设置；显式传给 Tup 的 `-j` 仍会覆盖该值。
 原 `make -j8` 已在 Git Bash 中复编通过，完整日志为 `build/rehab/build_fix_20261102/make-j8.log`。`Environment variable changed: HOME/PATH` 是环境变化提示，不是这次失败原因。
 V1.3 full也已复编通过，资源、产物哈希及源码保护检查通过；本次记录为 `build/rehab/build_fix_20261102/verification.json`。
-原 Makefile 仍读取 `tup.config` 中的 `v3.6-56V`。V1.3 请使用上面的 `python -B Rehab/scripts/build.py full --board v13`，不要把原板产物用于V1.3。
+原 Makefile 仍读取 `tup.config` 中的 `v3.6-56V`。下述项目入口修正后，默认 GNU make 优先读取新增的 `GNUmakefile`，不再进入原板 Makefile。
+
+### 默认构建、烧录及 VS Code 入口修正（2026-11-02）
+
+现场设备报告 `3.6-56V` 且没有 `rehab` 接口。旧 `make flash` 依赖 `all`，会依据恢复后的原板 `tup.config` 重新编译并烧录公共目录的 ELF；旧 VS Code build 任务又未指定 `--board`，默认构建 V1.2。
+
+当前项目默认入口：
+
+```sh
+make                 # 串行构建并校验 V1.3 full，电机继续锁定
+make flash-check     # 构建、校验并打印烧录参数，不访问设备
+make flash           # 构建、校验、ST-Link 烧录、读回校验，随后复位运行
+make check           # 只校验现有 V1.3 full 产物
+```
+
+以上命令须在 `Firmware` 目录运行。`make -j8` 的外层并发不改变内部固定串行编译。可用 `make flash PROGRAMMER=<ST-Link序列号>` 指定探针。
+不依赖 make 时，可运行 `python -B Rehab/scripts/project.py build`、`flash --dry-run`、`flash` 或 `check`。
+
+新入口只使用 `build/rehab/v13/full/ODriveFirmware.elf`。烧录前检查源码保护、成功构建记录、板型、full profile、真实电机锁、源码摘要、ELF/HEX/BIN/MAP 的 SHA256、ELF 模块与内存布局及 V1.3 接口。任一步失败都不会启动 OpenOCD。构建和烧录共用排他锁；异常中断留下锁时须先确认进程已退出，再处理 `build/rehab/project.lock`，不能并发启动其他构建。
+
+VS Code 的 build、flash - ST-Link 和首个 V1.3 调试配置使用该入口；调试前执行同一构建校验。编辑器使用 `build/rehab/v13/editor` 的隔离头文件。原板调试项标记为 Original boards only。
+
+原 `Makefile` 和 `tup.config` 不修改。原板用户显式运行 `make -f Makefile` 或 `make -f Makefile flash`；这些命令不适用于 V1.3。V1.2 仍可用专用脚本显式传 `--board v12`。
+
+保护审计边界：新增 `GNUmakefile`、`Rehab/scripts/project.py` 和入口回归；精确登记三个 VS Code 文件及相关保护/测试脚本的新哈希。`MotorControl/main.cpp` 只恢复提交 `3234414a` 误删的首行空行，使文件逐字节回到历史快照。原始基线、历史归档、原 Makefile 和控制算法不改动；不执行整体 `--freeze` 刷新历史。独立审查后才登记本次明确的修改范围。
+
+本次验证不执行真实烧录。`flash-check` 成功也不等于设备已经更新；实际烧录后仍须读取 `rehab.board_revision == 0x1301`、`stage == 6`、`hardware_locked == 1` 和 `motor_armed == 0`。
+
+验证结果（2026-11-02）：独立审查通过；完整核心保护通过（694 文件历史快照、83 个精确登记文件）；入口单测10项通过；完整主机回归45组通过、0失败、0跳过（上游超长 step_cb 单用例仍按既有规则排除，由有界真实函数测试补充）。V1.3 full ARM构建、资源/哈希检查、PowerShell `make flash-check` 及 Git Bash `make -j8 flash-check` 全部通过；两次均输出 `DRY RUN: programmer NOT executed`，未烧录设备。显式原板入口用 `make -f Makefile -n all` 确认保留，本轮未重复原板 ARM 全构建。
+
+本次 ELF SHA256：`1da1422d181ac5e02d259db911d6abfc375bd76ca721125c816e47cbab86a6c8`。当前回归报告见 `build/rehab/tests/report.json`，入口验证摘要见 `build/rehab/entrypoint_fix_20261102.json`。此哈希标识本次构建，后续修改源码并重新构建会变化。
 
 ## 板级映射与隔离
 

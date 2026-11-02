@@ -13,9 +13,9 @@ spec.loader.exec_module(guard)
 real_sha=guard.sha
 real_git=guard.subprocess.check_output
 
-def run(**patches):
+def run(full=False, **patches):
     with contextlib.ExitStack() as stack:
-        stack.enter_context(patch.object(sys,'argv',['core_protection_v13.py','--audit-only']))
+        stack.enter_context(patch.object(sys,'argv',['core_protection_v13.py']+([] if full else ['--audit-only'])))
         stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
         stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
         for name,value in patches.items(): stack.enter_context(patch.object(guard,name,value))
@@ -37,3 +37,20 @@ for target in ('Firmware/MotorControl/controller.cpp','Firmware/MotorControl/enc
     assert run(sha=altered)==1,target
 assert run()==0
 print('PASS: production guard rejects staged core additions, core/V1.2/DRV changes and historical evidence tampering; no files or index changed')
+
+# Entrypoints are a narrow reviewed surface, not a general build-file exemption.
+assert run(full=True)==0, 'Full guard must pass before tamper tests are meaningful'
+for target in sorted(guard.ENTRYPOINTS) + ['Firmware/Rehab/scripts/project.py']:
+    def altered_entry(path,target=target):
+        return '0'*64 if Path(path)==guard.REPO/target else real_sha(path)
+    assert run(full=True,sha=altered_entry)==1,target
+real_loads=guard.json.loads
+for target in sorted(guard.ENTRYPOINTS) + ['Firmware/Rehab/scripts/project.py']:
+    def missing_registration(data,target=target,**kwargs):
+        value=real_loads(data,**kwargs)
+        if isinstance(value,dict) and 'reviewed_files' in value:
+            value['reviewed_files'].pop(target,None)
+        return value
+    with patch.object(guard.json,'loads',missing_registration): assert run(full=True)==1,target
+assert run(full=True)==0
+print('PASS: exact hashes reject unreviewed project entrypoint changes')

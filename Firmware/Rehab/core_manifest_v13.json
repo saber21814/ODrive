@@ -75,12 +75,17 @@
     "Firmware/Rehab/protocol/service.hpp": "73587a6ee3c1c53fb7c43ec9e73c72ef12743adec8567e61297ba33df55db190",
     "Firmware/Rehab/scripts/build.py": "b11a29a1fb5d49e59acc937d9389f0e1369529872c71c291c6e09e04e315f961",
     "Firmware/Rehab/scripts/check_core.py": "02d8c4a0faed09b6a9ab6468cd288ed4f164310446599efd30c3106d5deea15b",
-    "Firmware/Rehab/scripts/core_protection_v13.py": "e49043556f0e064cd7d1ce11c427fa9f1d09f3305869b3aadfcd6012fce20cc3",
-    "Firmware/Rehab/scripts/editor.py": "e1fb3d26a3aa95e34277db42ad457f60796ad4eeb96e94224c488ff2985d9bd0",
+    "Firmware/Rehab/scripts/core_protection_v13.py": "8ed24ce8aaf8ccf34f5017db2dbc5534e4f8c8fd05bceeaf0c4b180c10c3626b",
+    "Firmware/Rehab/scripts/editor.py": "0452185a896a1886bbd549f294627c8b92795f5cb7590b13a61fd208513b145c",
     "Firmware/Rehab/scripts/ingress_sources.py": "e00f57d0d21bb6c055318445885ea67d7f11fac443b4f97605e7d0ca828cd47a",
     "Firmware/Rehab/scripts/resources.py": "a351db149d1aa1b40692b5e09f3834dc52ad946795dce53c717015c290a76d23",
-    "Firmware/Rehab/scripts/test.py": "ee71c7aa6f876c2fc7b1c48cd18dd8a2b901f7b6939d99345e43ec56dc18f3ef",
+    "Firmware/Rehab/scripts/test.py": "e241ab515e9cf7bedda92ec68261936eb9daa5c2071c495a0584b4155ed179d4",
     "Firmware/Rehab/scripts/verify.py": "7d37bc45bf6ae9d5274e823c91028f8f6629cde4a8eb1970590e72f289b5ee71",
-    "Firmware/Tupfile.lua": "100a7363a5cbe56d8cf4733fd50b13122977e54113a2519f8e96ed249b42009d"
+    "Firmware/Tupfile.lua": "100a7363a5cbe56d8cf4733fd50b13122977e54113a2519f8e96ed249b42009d",
+    "Firmware/GNUmakefile": "b30518d6b4c52dbadfbeea15be5d0fbf51db7eb3e1081b7fab3589cbff118d2b",
+    "Firmware/.vscode/tasks.json": "b7b4bead78b9a5358f06e40df781d7960641b52f2746ea02eb99e6d0239a66a3",
+    "Firmware/.vscode/launch.json": "9c8b47613351fe1c911e34992d591470bfeb45b9ff23ecaecdae55800a52f0dd",
+    "Firmware/.vscode/c_cpp_properties.json": "50d5d09d37f2a6b599a8eb7e7363b3540de19c0608243a032414f2f0b11c826b",
+    "Firmware/Rehab/scripts/project.py": "f750cb202dee960baf12a0f8cc0364b210aa25613e7ee997c66c0e9fc77be428"
   }
 }

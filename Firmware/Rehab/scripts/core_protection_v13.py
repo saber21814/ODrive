@@ -22,6 +22,10 @@ REVIEWED=FW/'Rehab/core_manifest_v13.json'
 HOOKS={ 'Firmware/'+p for p in (
     'Drivers/STM32/stm32_gpio.cpp','Drivers/STM32/stm32_spi_arbiter.hpp',
     'MotorControl/nvm_config.hpp','Tupfile.lua') }
+# Reviewed project entrypoints only; exact hashes remain mandatory below.
+# The upstream Makefile and every motor algorithm remain protected by history.
+ENTRYPOINTS={'Firmware/'+p for p in (
+    'GNUmakefile', '.vscode/tasks.json', '.vscode/launch.json', '.vscode/c_cpp_properties.json')}
 EXTENSIONS=('Firmware/Rehab/','Firmware/Tests/rehab/','Firmware/Board/rehab_v13/')
 NEW=EXTENSIONS+('analysis/rehab_v13_baseline/',)
 
@@ -50,21 +54,21 @@ def main():
             except KeyError: actual=None
             if actual!=digest: errors.append('Snapshot content mismatch: '+name)
     for name,digest in current['files'].items():
-        if name not in HOOKS and not name.startswith(EXTENSIONS) and sha(REPO/name)!=digest:
+        if name not in HOOKS | ENTRYPOINTS and not name.startswith(EXTENSIONS) and sha(REPO/name)!=digest:
             errors.append('Changed outside V1.3 integration surface: '+name)
     # The original reviewed manifest is historical evidence, not a new hash target.
     old_review='Firmware/Rehab/core_manifest.json'
     if sha(REPO/old_review)!=current['files'].get(old_review): errors.append('Original reviewed manifest changed')
     listed=subprocess.check_output(['git','ls-files','--cached','--others','--exclude-standard','-z'],cwd=REPO,text=True,encoding='utf-8')
     for name in set(filter(None,listed.split('\0'))):
-        if name not in current['files'] and not name.startswith(NEW): errors.append('New file outside V1.3 extension surface: '+name)
+        if name not in current['files'] and name not in ENTRYPOINTS and not name.startswith(NEW): errors.append('New file outside V1.3 extension surface: '+name)
     if errors:
         print('\n'.join(errors),file=sys.stderr);return 1
     if a.audit_only:
         print(f"AUDIT: both history archives verified; {len(current['inherited_changes'])} inherited differences retained; integration review still required.")
         return 0
     if a.freeze:
-        paths=set(HOOKS)
+        paths=set(HOOKS | ENTRYPOINTS)
         paths.update(f.relative_to(REPO).as_posix() for f in (FW/'Board/rehab_v13').rglob('*') if f.is_file())
         # Review-critical extension sources and the checker itself are frozen too.
         paths.update(f.relative_to(REPO).as_posix() for f in (FW/'Rehab').rglob('*')
@@ -81,6 +85,9 @@ def main():
     if not REVIEWED.is_file():
         print('V1.3 integration is not yet registered after review.',file=sys.stderr);return 1
     reviewed=json.loads(REVIEWED.read_text(encoding='utf-8'))
+    for name in ENTRYPOINTS | {'Firmware/Rehab/scripts/project.py'}:
+        if name not in reviewed['reviewed_files']:
+            errors.append('Project entrypoint has not been independently reviewed: '+name)
     if reviewed['original_manifest_sha256']!=sha(ORIGINAL/'manifest.json') or reviewed['snapshot_manifest_sha256']!=sha(SNAPSHOT/'manifest.json'):
         errors.append('Historical manifest identity changed')
     for name,digest in reviewed['reviewed_files'].items():

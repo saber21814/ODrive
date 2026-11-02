@@ -181,6 +181,11 @@ def specifications(quick):
         notes=['Actual guard with injected Git/hash results; rejects staged core additions and protected-file changes without changing the filesystem/index.'])
     protection['python']=True
     suites.append(protection)
+    entry=suite('project_entry',['Tests/rehab/project_entry_tests.py'],
+        production=['Rehab/scripts/project.py'],
+        notes=['Hardware-free build/flash preflight regression; programmer subprocess is mocked, never executed.'])
+    entry['python']=True
+    suites.append(entry)
     native_sources = sorted(relative(path) for path in (ROOT / "Tests").glob("*.cpp"))
     native = suite(
         "native", native_sources,

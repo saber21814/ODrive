@@ -19,10 +19,8 @@
       ],
       "args": [
         "-B",
-        "${workspaceFolder}/Rehab/scripts/build.py",
-        "full",
-        "--jobs",
-        "1"
+        "${workspaceFolder}/Rehab/scripts/project.py",
+        "build"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -33,20 +31,39 @@
     },
     {
       "label": "flash - ST-Link",
-      "type": "shell",
-      "command": "make flash",
-      "problemMatcher": []
+      "type": "process",
+      "command": "python",
+      "problemMatcher": [],
+      "args": [
+        "-B",
+        "${workspaceFolder}/Rehab/scripts/project.py",
+        "flash"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      }
     },
     {
-      "label": "flash - Black Magic Probe",
-      "type": "shell",
-      "command": "make flashbmp",
-      "problemMatcher": []
+      "label": "original board only: flash - Black Magic Probe",
+      "type": "process",
+      "command": "make",
+      "problemMatcher": [],
+      "args": [
+        "-f",
+        "Makefile",
+        "flash-bmp"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
     },
     {
       "label": "openocd",
       "type": "shell",
-      "command": "openocd -f \"interface/stlink-v2.cfg\" -f \"target/stm32f4x_stlink.cfg\" -c \"gdb_port 3333; log_output openocd.log\"",
+      "command": "openocd -f \"interface/stlink-v2.cfg\" -f \"target/stm32f4x.cfg\" -c \"gdb_port 3333; log_output openocd.log\"",
       "problemMatcher": []
     },
     {
@@ -55,13 +72,33 @@
       "command": "python",
       "args": [
         "-B",
-        "${workspaceFolder}/Rehab/scripts/editor.py",
-        "--configure"
+        "${workspaceFolder}/Rehab/scripts/project.py",
+        "build"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
+    },
+    {
+      "label": "rehab: flash preflight (no device access)",
+      "type": "process",
+      "command": "python",
+      "args": [
+        "-B",
+        "${workspaceFolder}/Rehab/scripts/project.py",
+        "flash",
+        "--dry-run"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$gcc"
+      ],
+      "runOptions": {
+        "instanceLimit": 1
+      }
     }
   ]
 }

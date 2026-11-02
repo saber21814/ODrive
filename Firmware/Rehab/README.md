@@ -1,5 +1,7 @@
 # ODrive Rehab V1.2 固件扩展
 
+> V1.3 当前项目入口：在 `Firmware` 中执行 `make` 构建、`make flash-check` 做不访问设备的烧录前校验、`make flash` 烧录并读回校验。VS Code 的 build 和 flash - ST-Link 使用同一入口。原板入口须显式 `make -f Makefile`。详见 [V1.3 迁移与入口修正](docs/v13_migration.md)。
+
 新增独立 **V1.3** 板级目标，使用 `build.py <profile> --board v13`。调试步骤、STOP恢复、双SPI及实机边界见 [V1.3迁移与验收](docs/v13_migration.md)。不带板型参数仍保留V1.2构建。
 
 基线：`fw-v0.5.6-4-gf9b5419c` / `f9b5419c820c6fb2f609322a5131cdf8c5f71657`。

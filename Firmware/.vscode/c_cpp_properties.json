@@ -1,14 +1,14 @@
 {
   "configurations": [
     {
-      "name": "ODrive Rehab V1.2",
+      "name": "ODrive Rehab V1.3",
       "compilerPath": "C:/Program Files/gcc-arm-none-eabi-7-2018-q2-update-win32/bin/arm-none-eabi-g++.EXE",
-      "compileCommands": "${workspaceFolder}/build/rehab/editor/compile_commands.json",
+      "compileCommands": "${workspaceFolder}/build/rehab/v13/editor/compile_commands.json",
       "includePath": [
-        "D:/00-ODrive-text/ODrive-fw-0.5.6/Firmware/build/rehab/editor",
+        "D:/00-ODrive-text/ODrive-fw-0.5.6/Firmware/build/rehab/v13/editor",
         "${workspaceFolder}/Drivers/STM32",
-        "${workspaceFolder}/Board/rehab_v12/Inc",
-        "${workspaceFolder}/Board/rehab_v12/../../ThirdParty/FreeRTOS/Source/portable/GCC/ARM_CM4F",
+        "${workspaceFolder}/Board/rehab_v13/Inc",
+        "${workspaceFolder}/Board/rehab_v13/../../ThirdParty/FreeRTOS/Source/portable/GCC/ARM_CM4F",
         "${workspaceFolder}/ThirdParty/STM32F4xx_HAL_Driver/Inc",
         "${workspaceFolder}/ThirdParty/FreeRTOS/Source/include",
         "${workspaceFolder}/ThirdParty/FreeRTOS/Source/CMSIS_RTOS",
@@ -35,7 +35,7 @@
         "REHAB_ENABLE_NETWORK=1",
         "REHAB_STAGE=6",
         "REHAB_REAL_MOTOR=0",
-        "HW_VERSION_MINOR=12",
+        "HW_VERSION_MINOR=13",
         "HW_VERSION_VOLTAGE=0",
         "STM32F405xx",
         "HW_VERSION_MAJOR=3",
@@ -50,7 +50,8 @@
         "FIBRE_DEFAULT_LOG_VERBOSITY=2",
         "FIBRE_ENABLE_LIBUSB_BACKEND=0",
         "FIBRE_ENABLE_TCP_SERVER_BACKEND=0",
-        "FIBRE_ENABLE_TCP_CLIENT_BACKEND=0"
+        "FIBRE_ENABLE_TCP_CLIENT_BACKEND=0",
+        "REHAB_V13=1"
       ],
       "compilerArgs": [
         "-mthumb",
@@ -65,7 +66,7 @@
         "path": [
           "${workspaceFolder}/MotorControl",
           "${workspaceFolder}/Rehab",
-          "${workspaceFolder}/Board/rehab_v12",
+          "${workspaceFolder}/Board/rehab_v13",
           "${workspaceFolder}/Drivers",
           "${workspaceFolder}/communication",
           "${workspaceFolder}/fibre-cpp/include"

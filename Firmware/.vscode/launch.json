@@ -5,11 +5,25 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "type": "cortex-debug",
+            "servertype": "openocd",
+            "request": "launch",
+            "name": "Debug Rehab V1.3 full - ST-Link",
+            "executable": "${workspaceFolder}/build/rehab/v13/full/ODriveFirmware.elf",
+            "preLaunchTask": "build",
+            "configFiles": [
+                "interface/stlink-v2.cfg",
+                "target/stm32f4x.cfg"
+            ],
+            "svdFile": "${workspaceFolder}/Board/v3/STM32F40x.svd",
+            "cwd": "${workspaceFolder}"
+        },
+        {
             // For the Cortex-Debug extension
             "type": "cortex-debug",
             "servertype": "openocd",
             "request": "launch",
-            "name": "Debug ODrive v3.x - ST-Link",
+            "name": "Original boards only: Debug ODrive v3.x - ST-Link",
             "executable": "${workspaceRoot}/build/ODriveFirmware.elf",
             "configFiles": [
                 "interface/stlink-v2.cfg",
@@ -23,7 +37,7 @@
             "type": "cortex-debug",
             "servertype": "openocd",
             "request": "launch",
-            "name": "Debug ODrive v4.x - ST-Link",
+            "name": "Original boards only: Debug ODrive v4.x - ST-Link",
             "executable": "${workspaceRoot}/build/ODriveFirmware.elf",
             "configFiles": [
                 "interface/stlink.cfg",
@@ -40,7 +54,7 @@
             "type": "cortex-debug",
             "servertype": "openocd",
             "request": "launch",
-            "name": "Debug ODrive v3.x - ST-Link - FreeRTOS",
+            "name": "Original boards only: Debug ODrive v3.x - ST-Link - FreeRTOS",
             "executable": "${workspaceRoot}/build/ODriveFirmware.elf",
             "rtos": "FreeRTOS",
             "configFiles": [
@@ -60,7 +74,7 @@
                 "load"
             ],
             "request": "launch",
-            "name": "Debug ODrive v3.x - Remote",
+            "name": "Original boards only: Debug ODrive v3.x - Remote",
             "executable": "${workspaceRoot}/build/ODriveFirmware.elf",
             "configFiles": [
                 "interface/stlink-v2.cfg",
@@ -79,7 +93,7 @@
                 "load"
             ],
             "request": "launch",
-            "name": "Debug ODrive v4.x - Remote",
+            "name": "Original boards only: Debug ODrive v4.x - Remote",
             "executable": "${workspaceRoot}/build/ODriveFirmware.elf",
             "configFiles": [
                 "interface/stlink.cfg",
@@ -93,7 +107,7 @@
             "type": "cortex-debug",
             "servertype": "bmp",
             "request": "launch",
-            "name": "Debug ODrive v3.x - Black Magic Probe",
+            "name": "Original boards only: Debug ODrive v3.x - Black Magic Probe",
             "executable": "${workspaceRoot}/build/ODriveFirmware.elf",
             "device": "STM32F4xx",
             "BMPGDBSerialPort": "${env:BMP_PORT}",

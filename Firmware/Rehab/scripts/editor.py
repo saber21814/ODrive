@@ -40,7 +40,7 @@ def capture(board='v12'):
         compiler=shutil.which(args[0])
         if not compiler: raise RuntimeError('ARM compiler not found: '+args[0])
         if '-DREHAB_V12=1' not in args or '-DREHAB_STAGE=6' not in args:
-            raise RuntimeError('Editor export requires the FULL V1.2 command database.')
+            raise RuntimeError('Editor export requires the FULL Rehab command database.')
         if ('-DREHAB_V13=1' in args) != (board=='v13'):
             raise RuntimeError('Editor export board does not match the compile commands.')
         args[0]=pathlib.Path(compiler).as_posix()
@@ -74,7 +74,7 @@ def capture(board='v12'):
     write_json(EDITOR/'compile_commands.json', list(entries.values()))
     write_json(EDITOR/'context.json', {'profile':'full', 'board':board, 'firmware_units':firmware_count,
                                      'host_units':len(entries)-firmware_count})
-    print(f'Editor context: {firmware_count} ARM + {len(entries)-firmware_count} host units; isolated V1.2 headers.')
+    print(f'Editor context: {firmware_count} ARM + {len(entries)-firmware_count} host units; isolated {board} headers.')
 
 
 def configure():

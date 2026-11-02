@@ -64,3 +64,25 @@ V1.2生成接口与实施前逐字节一致，V1.3保留原73个属性顺序并�
 PCB DRC接口未完成验收；GATE/PWM关闭延迟、DRV实际寄存器恢复、ADC同步与零偏、SPI/DMA波形、制动切换、回生温升及温度阈值均待实测。
 软件关闭制动不关闭STOP低电平下的555支路。V1.3 HS网表连线已修正，但不代表实体制动验收通过。
 真实电机默认关闭，全部准入声明保持未验收；没有烧录、运行电机或修改电路。
+
+## 2026-11-02 构建与烧录入口独立复核
+
+原因：默认 make flash 先按恢复后的 v3.6-56V 配置重新构建；VS Code build 未指定板型时还会落到 V1.2。
+新增 GNUmakefile 优先入口固定 V1.3 full；project.py 在调用 ST-Link 前检查保护、板型、profile、使能锁、源码摘要、产物哈希及真实 ELF 资源/接口，读回校验成功后才复位运行。原 Makefile 保留显式 -f 入口。
+
+独立审查者 flash_entry_review 对实际差异复核通过；其提出的保护测试缺少完整模式基线断言问题已修正，并增加遗漏登记反例。主控 main.cpp 仅恢复误删首行，恢复后与原归档逐字节一致；FOC、编码器、控制器、外设中断实现未改。原始归档和旧清单保留，未运行整体 freeze。
+
+仅对下列 8 个文件登记新哈希，其余已有哈希不变。新增 4 个项目入口是固定名称、精确哈希保护；不扩大算法文件修改范围。测试文件位于原有测试扩展目录。
+
+| 文件 | 原登记 SHA256（— 表示本次新增登记） | 本次 SHA256 |
+|---|---|---|
+| `Firmware/GNUmakefile` | `—` | `b30518d6b4c52dbadfbeea15be5d0fbf51db7eb3e1081b7fab3589cbff118d2b` |
+| `Firmware/.vscode/tasks.json` | `—` | `b7b4bead78b9a5358f06e40df781d7960641b52f2746ea02eb99e6d0239a66a3` |
+| `Firmware/.vscode/launch.json` | `—` | `9c8b47613351fe1c911e34992d591470bfeb45b9ff23ecaecdae55800a52f0dd` |
+| `Firmware/.vscode/c_cpp_properties.json` | `—` | `50d5d09d37f2a6b599a8eb7e7363b3540de19c0608243a032414f2f0b11c826b` |
+| `Firmware/Rehab/scripts/project.py` | `—` | `f750cb202dee960baf12a0f8cc0364b210aa25613e7ee997c66c0e9fc77be428` |
+| `Firmware/Rehab/scripts/core_protection_v13.py` | `e49043556f0e064cd7d1ce11c427fa9f1d09f3305869b3aadfcd6012fce20cc3` | `8ed24ce8aaf8ccf34f5017db2dbc5534e4f8c8fd05bceeaf0c4b180c10c3626b` |
+| `Firmware/Rehab/scripts/editor.py` | `e1fb3d26a3aa95e34277db42ad457f60796ad4eeb96e94224c488ff2985d9bd0` | `0452185a896a1886bbd549f294627c8b92795f5cb7590b13a61fd208513b145c` |
+| `Firmware/Rehab/scripts/test.py` | `ee71c7aa6f876c2fc7b1c48cd18dd8a2b901f7b6939d99345e43ec56dc18f3ef` | `e241ab515e9cf7bedda92ec68261936eb9daa5c2071c495a0584b4155ed179d4` |
+
+此登记只表示静态代码审查通过。验证结果见 v13_migration.md；本轮不连接硬件、不烧录、不使能电机。
