@@ -97,6 +97,10 @@ static void reset_runtime() {
     rp::log_read = rp::log_write = rp::log_count = rp::log_dropped = 0; rp::started = false;
     for (unsigned i = 0; i < 3; ++i) { rp::rx[i] = {}; rp::tx[i] = {}; rp::parsers[i] = {}; }
     rp::service.~Service(); new (&rp::service) rw::Service(rp::engine,rp::hooks);
+#if REHAB_ENABLE_NETWORK
+    rp::pending_network={};rp::network_revision=rp::network_seen=rp::network_error_count=0;
+    rp::network_status={};
+#endif
 }
 static void worker_once() { try { rp::safety_main(nullptr); } catch (const EndIteration&) {} }
 static bool saw_event(osMessageQId queue,uint32_t id) {
@@ -232,6 +236,67 @@ static void test_handoff_preconditions() {
     reset_runtime(); controllers[0].config_.load_encoder_axis=1;
     CHECK(rp::take_control(nullptr,11,rp::feedback)!=Result::Ok);
 }
+static void test_idle_task_queue() {
+    reset_runtime();
+    CHECK(rp::quiescent_axis());
+    axes[0].task_chain_[1]=Axis::AXIS_STATE_IDLE;
+    const auto original=axes[0].task_chain_;
+    CHECK(rp::quiescent_axis());
+    CHECK(rp::take_control(nullptr,11,rp::feedback)==Result::Ok);
+    CHECK(rp::release_control(nullptr,11,rp::feedback)==Result::Ok);
+    CHECK(axes[0].task_chain_==original && !motors[0].is_armed_ && !rp::motor_may_arm());
+    // Exercise every active tail position, including work behind repeated IDLE.
+    for(size_t i=1;i<axes[0].task_chain_.size();++i) {
+        for(auto state:{Axis::AXIS_STATE_MOTOR_CALIBRATION,Axis::AXIS_STATE_CLOSED_LOOP_CONTROL}) {
+            axes[0].task_chain_.fill(Axis::AXIS_STATE_IDLE);
+            axes[0].task_chain_[i]=state;
+            if(i+1<axes[0].task_chain_.size())axes[0].task_chain_[i+1]=Axis::AXIS_STATE_UNDEFINED;
+            CHECK(!rp::quiescent_axis());
+            CHECK(rp::take_control(nullptr,11,rp::feedback)==Result::Busy);
+        }
+    }
+    axes[0].task_chain_.fill(Axis::AXIS_STATE_IDLE);
+    CHECK(!rp::quiescent_axis());
+    axes[0].task_chain_.back()=Axis::AXIS_STATE_UNDEFINED;
+    CHECK(rp::quiescent_axis());
+    axes[0].task_chain_[2]=Axis::AXIS_STATE_UNDEFINED;
+    axes[0].task_chain_[3]=Axis::AXIS_STATE_MOTOR_CALIBRATION; // inactive stale tail
+    CHECK(rp::quiescent_axis());
+    axes[0].requested_state_=Axis::AXIS_STATE_IDLE;CHECK(!rp::quiescent_axis());
+    axes[0].requested_state_=Axis::AXIS_STATE_UNDEFINED;
+    controllers[0].config_.anticogging.calib_anticogging=true;CHECK(!rp::quiescent_axis());
+    controllers[0].config_.anticogging.calib_anticogging=false;
+    motors[0].is_armed_=true;CHECK(!rp::quiescent_axis());
+    motors[0].is_armed_=false;
+    axes[0].current_state_=Axis::AXIS_STATE_CLOSED_LOOP_CONTROL;CHECK(!rp::quiescent_axis());
+}
+#if REHAB_ENABLE_NETWORK
+static void test_network_idle_admission() {
+    reset_runtime();axes[0].task_chain_[1]=Axis::AXIS_STATE_IDLE;
+    submit(0,rw::Command::Hello);
+    auto response=replies(0);CHECK(response.size()==1 && result_code(response[0])==0);
+    rw::Frame frame;frame.command=uint16_t(rw::Command::SetNetwork);
+    frame.session=response[0].session;frame.sequence=2;
+    const uint8_t payload[]={192,168,77,2,0,0,0,0,255,255,255,0,0xe8,0x99};
+    frame.length=sizeof(payload);std::memcpy(frame.payload,payload,sizeof(payload));
+    uint8_t bytes[rw::kMaxFrame];const size_t n=rw::encode(frame,bytes,sizeof(bytes));
+    rp::receive_bytes(0,bytes,n);rp::service_transports();
+    response=replies(0);
+    CHECK(response.size()==1 && response[0].sequence==2 && response[0].session==frame.session);
+    CHECK(result_code(response[0])==uint32_t(Result::Ok));
+    CHECK(rp::network_revision==1 && rp::pending_network.port==39400);
+    CHECK(std::memcmp(rp::pending_network.ip,payload,4)==0);
+    CHECK(!motors[0].is_armed_ && !rp::motor_may_arm() && rp::owner_session==0);
+    axes[0].task_chain_[2]=Axis::AXIS_STATE_MOTOR_CALIBRATION;
+    CHECK(rp::set_network(nullptr,payload,sizeof(payload))==Result::InvalidConfig);
+    axes[0].task_chain_[2]=Axis::AXIS_STATE_UNDEFINED;
+    axes[0].requested_state_=Axis::AXIS_STATE_CLOSED_LOOP_CONTROL;
+    CHECK(rp::set_network(nullptr,payload,sizeof(payload))==Result::InvalidConfig);
+    axes[0].requested_state_=Axis::AXIS_STATE_UNDEFINED;rp::owner_session=11;
+    CHECK(rp::set_network(nullptr,payload,sizeof(payload))==Result::InvalidConfig);
+    CHECK(rp::network_revision==1);
+}
+#endif
 static void test_deadlines() {
     reset_runtime(); active_target(); rp::target.epoch=3; motors[0].is_armed_=true;
     rp::fast_guard(); CHECK((rp::latched&rehab::FaultTargetExpired) && !motors[0].is_armed_);
@@ -565,6 +630,10 @@ static void test_physical_stop_revision() {
 #endif
 int main() {
     struct Test { const char* name; void (*run)(); } tests[] = {
+        {"native idle task queue admission",test_idle_task_queue},
+#if REHAB_ENABLE_NETWORK
+        {"SetNetwork through actual wire/runtime admission",test_network_idle_admission},
+#endif
 #if defined(REHAB_V13)
         {"V1.3 physical STOP startup/edges/generation",test_physical_stop_revision},
 #endif

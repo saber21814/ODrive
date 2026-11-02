@@ -86,3 +86,18 @@ PCB DRC接口未完成验收；GATE/PWM关闭延迟、DRV实际寄存器恢复�
 | `Firmware/Rehab/scripts/test.py` | `ee71c7aa6f876c2fc7b1c48cd18dd8a2b901f7b6939d99345e43ec56dc18f3ef` | `e241ab515e9cf7bedda92ec68261936eb9daa5c2071c495a0584b4155ed179d4` |
 
 此登记只表示静态代码审查通过。验证结果见 v13_migration.md；本轮不连接硬件、不烧录、不使能电机。
+
+## 2026-11-02 待机队列与网口配置修复
+
+实板 SetNetwork 返回 InvalidConfig：原生显式 IDLE 会形成 [IDLE, IDLE, UNDEFINED]，扩展层原先只接受尾项立即为 UNDEFINED。现在只读扫描活动队列，允许连续 IDLE 至首个 UNDEFINED；任何活动校准/运动任务、待处理请求、已使能、齿槽校准或缺少终止符仍拒绝。不改原生状态机、FOC、控制器、编码器或电机准入锁。
+
+独立审查 idle_queue_review 通过；六组针对性主机回归通过，包括 V1.2/V1.3、真实电机标志两种组合（准入仍锁定）、实际二进制 Hello→SetNetwork 路径以及 native_ingress。CH394 为断连测试替身，不代表物理网口验收。原45组历史结果保留；新增日志位于 build/rehab/idle_queue_fix_20261102。
+
+仅更新以下两个已登记文件的精确哈希，未扩大范围、未刷新原始归档。测试及测试替身位于原有测试目录。默认过压阈值问题不在本次修改范围。
+
+| 文件 | 原登记 SHA256 | 本次 SHA256 |
+|---|---|---|
+| `Firmware/Rehab/platform/runtime.cpp` | `b933031675b54cfae7946bd38110f8d42faf1f57ce6b3c0623254d64d71a04e3` | `cb6bfb2317fd3ec90490f497f10124a5666b578002d594d897f86efe870733a4` |
+| `Firmware/Rehab/scripts/test.py` | `e241ab515e9cf7bedda92ec68261936eb9daa5c2071c495a0584b4155ed179d4` | `aa4d8e67cabefda6a15a011877bad3c31c7d4092aba6a3738089701116d40293` |
+
+V1.3 full ARM 构建及 project.py flash --dry-run 核验通过：text=359000、data=5484、bss=145856；ELF SHA256 `2acd114bc04a713c5e6bd03558fd2c2bb8d6779ab30fc8c1d0907c707fd765a0`。real motor LOCKED，未执行烧录。首次 Tup 临时文件访问失败，保留日志后串行重试通过（idle_queue_fix_20261102/tup-first-attempt.log）。

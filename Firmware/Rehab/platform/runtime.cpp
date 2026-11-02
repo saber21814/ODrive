@@ -146,10 +146,16 @@ Feedback capture() {
 }
 bool quiescent_axis() {
     const auto& a=axes[0];
-    return a.current_state_==Axis::AXIS_STATE_IDLE && !motors[0].is_armed_
-        && a.requested_state_==Axis::AXIS_STATE_UNDEFINED
-        && a.task_chain_[1]==Axis::AXIS_STATE_UNDEFINED
-        && !a.controller_.config_.anticogging.calib_anticogging;
+    if(a.current_state_!=Axis::AXIS_STATE_IDLE || motors[0].is_armed_
+       || a.requested_state_!=Axis::AXIS_STATE_UNDEFINED
+       || a.controller_.config_.anticogging.calib_anticogging)return false;
+    // Native explicit IDLE produces [IDLE, IDLE, UNDEFINED]. Trailing IDLE
+    // entries are harmless, but any queued work before the terminator is not.
+    for(size_t i=1;i<a.task_chain_.size();++i) {
+        if(a.task_chain_[i]==Axis::AXIS_STATE_UNDEFINED)return true;
+        if(a.task_chain_[i]!=Axis::AXIS_STATE_IDLE)return false;
+    }
+    return false; // A queue without a terminator is not a proven idle state.
 }
 Result take_control(void*,uint32_t session,const Feedback&) {
     CRITICAL_SECTION() {

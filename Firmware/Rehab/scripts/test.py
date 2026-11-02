@@ -136,6 +136,14 @@ def specifications(quick):
             ],
         ))
 
+    network_runtime = next(s for s in suites if s['name'] == 'runtime_v13').copy()
+    network_runtime['name'] = 'runtime_network_v13'
+    network_runtime['definitions'] = [d.replace('REHAB_ENABLE_NETWORK=0', 'REHAB_ENABLE_NETWORK=1')
+                                      for d in network_runtime['definitions']]
+    network_runtime['notes'] = network_runtime['notes'] + [
+        'Actual SetNetwork admission and wire response; CH394 transport is a disconnected host carrier.']
+    suites.append(network_runtime)
+
     suites.append(suite(
         "native_ingress", ["Tests/rehab/ingress_tests.cpp", "Rehab/platform/isr_timing.cpp"] + SERVICE,
         flags=GNU_STRICT + ["-Wno-unused-parameter"], definitions=runtime_definitions,
