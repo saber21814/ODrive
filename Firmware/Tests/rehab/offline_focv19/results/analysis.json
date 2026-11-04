@@ -1,0 +1,289 @@
+{
+  "baseline": "3abc1e3290acc4c6054caa2d7b6a696118a0fd75",
+  "fixture_sha256": "bbafcc3773ce1c28e47429bfd32f01b4eeed6b9603ed3aefd2126f8585d53f46",
+  "sample_count": 64,
+  "sample_ticks": [
+    21000
+  ],
+  "sample_period_us": 125.0,
+  "pre63_alpha_mean": -0.08840858486909715,
+  "pre63_alpha_range": [
+    -0.2087159901857376,
+    -0.00730566680431366
+  ],
+  "amps_per_count": 0.0201416015625,
+  "delta_adc": [
+    12,
+    10
+  ],
+  "delta_alpha_from_adc": -0.443115234375,
+  "delta_alpha_offset_term": 5.475431680679321e-05,
+  "delta_alpha_predicted": -0.4430604800581932,
+  "delta_beta_predicted": 0.023230237454367676,
+  "alpha_reconstruction_max_error": 6.705522537231445e-08,
+  "beta_reconstruction_max_error": 3.4682930218771224e-08,
+  "last_estimate_f32": -0.010212470777332783,
+  "last_estimate_at_nominal24V": -0.010089707829000205,
+  "last": {
+    "sequence": 4497,
+    "timestamp": 4143264946,
+    "phase": 1,
+    "flags": 63,
+    "adc2": 2051,
+    "adc3": 2073,
+    "adc2_sr": 30,
+    "adc3_sr": 30,
+    "ialpha": -0.49038082361221313,
+    "ibeta": 0.02037324756383896,
+    "test_voltage": 0.3292039930820465,
+    "estimated_ibus": -0.010212470777332783,
+    "vbus": 23.71150016784668,
+    "dc_a": -0.07358395308256149,
+    "dc_b": -0.20240932703018188,
+    "dc_c": 0.27599334716796875,
+    "inverse_gain": 0.012500000186264515,
+    "trip": 2.0,
+    "runtime_ibus": -0.010212470777332783,
+    "motor_error_lo": 16777216,
+    "motor_error_hi": 0,
+    "system_error": 8,
+    "bdtr_sample": 60436,
+    "bdtr_after": 11284,
+    "armed_state": 3,
+    "output_timestamp": 4143296446,
+    "reserved26": 0,
+    "reserved27": 0
+  },
+  "comparisons": [
+    {
+      "scenario": "captured_window_right_censored",
+      "policy": "raw",
+      "first_index": 63,
+      "delay_us_vs_raw": 0.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "captured_window_right_censored",
+      "policy": "two_samples",
+      "first_index": null,
+      "delay_us_vs_raw": null,
+      "result": "unknown_after_capture",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "captured_window_right_censored",
+      "policy": "three_samples",
+      "first_index": null,
+      "delay_us_vs_raw": null,
+      "result": "unknown_after_capture",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "captured_window_right_censored",
+      "policy": "ema_025",
+      "first_index": null,
+      "delay_us_vs_raw": null,
+      "result": "unknown_after_capture",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_isolated_noise_then_recovery",
+      "policy": "raw",
+      "first_index": 63,
+      "delay_us_vs_raw": 0.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_isolated_noise_then_recovery",
+      "policy": "two_samples",
+      "first_index": null,
+      "delay_us_vs_raw": null,
+      "result": "not_detected",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_isolated_noise_then_recovery",
+      "policy": "three_samples",
+      "first_index": null,
+      "delay_us_vs_raw": null,
+      "result": "not_detected",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_isolated_noise_then_recovery",
+      "policy": "ema_025",
+      "first_index": null,
+      "delay_us_vs_raw": null,
+      "result": "not_detected",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_sustained_minus_020",
+      "policy": "raw",
+      "first_index": 63,
+      "delay_us_vs_raw": 0.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_sustained_minus_020",
+      "policy": "two_samples",
+      "first_index": 64,
+      "delay_us_vs_raw": 125.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_sustained_minus_020",
+      "policy": "three_samples",
+      "first_index": 65,
+      "delay_us_vs_raw": 250.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_sustained_minus_020",
+      "policy": "ema_025",
+      "first_index": 65,
+      "delay_us_vs_raw": 250.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_sustained_minus_0101",
+      "policy": "raw",
+      "first_index": 63,
+      "delay_us_vs_raw": 0.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_sustained_minus_0101",
+      "policy": "two_samples",
+      "first_index": 64,
+      "delay_us_vs_raw": 125.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_sustained_minus_0101",
+      "policy": "three_samples",
+      "first_index": 65,
+      "delay_us_vs_raw": 250.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_sustained_minus_0101",
+      "policy": "ema_025",
+      "first_index": 78,
+      "delay_us_vs_raw": 1875.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_sustained_minus_100",
+      "policy": "raw",
+      "first_index": 63,
+      "delay_us_vs_raw": 0.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_sustained_minus_100",
+      "policy": "two_samples",
+      "first_index": 64,
+      "delay_us_vs_raw": 125.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_sustained_minus_100",
+      "policy": "three_samples",
+      "first_index": 65,
+      "delay_us_vs_raw": 250.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_sustained_minus_100",
+      "policy": "ema_025",
+      "first_index": 63,
+      "delay_us_vs_raw": 0.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_real_single_pulse",
+      "policy": "raw",
+      "first_index": 63,
+      "delay_us_vs_raw": 0.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_real_single_pulse",
+      "policy": "two_samples",
+      "first_index": null,
+      "delay_us_vs_raw": null,
+      "result": "not_detected",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_real_single_pulse",
+      "policy": "three_samples",
+      "first_index": null,
+      "delay_us_vs_raw": null,
+      "result": "not_detected",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_real_single_pulse",
+      "policy": "ema_025",
+      "first_index": null,
+      "delay_us_vs_raw": null,
+      "result": "not_detected",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_repeated_real_pulses",
+      "policy": "raw",
+      "first_index": 63,
+      "delay_us_vs_raw": 0.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_repeated_real_pulses",
+      "policy": "two_samples",
+      "first_index": null,
+      "delay_us_vs_raw": null,
+      "result": "not_detected",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_repeated_real_pulses",
+      "policy": "three_samples",
+      "first_index": null,
+      "delay_us_vs_raw": null,
+      "result": "not_detected",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    },
+    {
+      "scenario": "synthetic_repeated_real_pulses",
+      "policy": "ema_025",
+      "first_index": 69,
+      "delay_us_vs_raw": 750.0,
+      "result": "triggered",
+      "note": "Only synthetic noise has a false-trigger label; a real short pulse must not be called noise."
+    }
+  ],
+  "limits": [
+    "The capture contains no physical current-direction reference.",
+    "No post-trigger samples; filter false-positive rates cannot be inferred.",
+    "Brake-enable, max_regen_current and effective native limits are not recorded.",
+    "ADC SR / PWM MOE are software snapshots, not analog waveform evidence."
+  ]
+}
