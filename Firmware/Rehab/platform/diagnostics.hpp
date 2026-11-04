@@ -104,12 +104,6 @@ public:
     uint32_t get_phase_adc_packed() const { return diagnostic_word(95); }
     uint32_t get_phase_adc_age_ms() const { return diagnostic_word(96); }
     uint32_t get_phase_adc_errors() const { return diagnostic_word(97); }
-    uint32_t get_bench_enabled() const { return diagnostic_word(98); }
-    uint32_t get_bench_active() const { return diagnostic_word(99); }
-    uint32_t get_bench_stage() const { return diagnostic_word(100); }
-    uint32_t get_bench_state() const { return diagnostic_word(101); }
-    uint32_t get_bench_reason() const { return diagnostic_word(102); }
-    uint32_t get_bench_epoch() const { return diagnostic_word(103); }
 #endif
     float get_length_m() const { return diagnostic_float(0); }
     float get_speed_m_s() const { return diagnostic_float(1); }

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Keep VS Code on the actual V1.2 ARM commands and isolated generated headers.
+"""Keep VS Code on actual profile-specific ARM commands and isolated generated headers.
 
 The installed Windows tup predates `compiledb`/`commandline`. Read its command
 nodes without changing the database or invoking its default build operation.
 """
 import argparse
+from contextlib import closing
 import json
 import pathlib
 import shlex
@@ -24,11 +25,14 @@ def write_json(path, value):
     temp.replace(path)
 
 
-def capture(board='v12'):
-    """Call after a successful FULL build, before restoring tup.config."""
+def capture(board='v12', profile='full'):
+    """Call after the selected build, before restoring tup.config."""
+    if profile not in ('full', 'peripherals') or (profile=='peripherals' and board!='v13'):
+        raise RuntimeError('Unsupported editor profile')
     global EDITOR
-    EDITOR=ROOT/('build/rehab/v13/editor' if board=='v13' else 'build/rehab/editor')
-    with sqlite3.connect((ROOT/'.tup/db').resolve().as_uri()+'?mode=ro', uri=True) as db:
+    EDITOR=ROOT/('build/rehab/v13/peripherals/editor' if profile=='peripherals' else
+                 'build/rehab/v13/editor' if board=='v13' else 'build/rehab/editor')
+    with closing(sqlite3.connect((ROOT/'.tup/db').resolve().as_uri()+'?mode=ro', uri=True)) as db:
         commands=[row[0] for row in db.execute(
             "SELECT name FROM node WHERE type=1 AND name LIKE '%arm-none-eabi-% -c %'")]
     entries={}
@@ -39,8 +43,15 @@ def capture(board='v12'):
         if source.suffix.lower() not in ('.c','.cpp','.cc'): continue
         compiler=shutil.which(args[0])
         if not compiler: raise RuntimeError('ARM compiler not found: '+args[0])
-        if '-DREHAB_V12=1' not in args or '-DREHAB_STAGE=6' not in args:
-            raise RuntimeError('Editor export requires the FULL Rehab command database.')
+        expected_stage=2 if profile=='peripherals' else 6
+        if '-DREHAB_V12=1' not in args or '-DREHAB_STAGE='+str(expected_stage) not in args:
+            raise RuntimeError('Editor export stage does not match selected profile.')
+        for feature in ('HX711','NETWORK','PROTOCOL'):
+            if '-DREHAB_ENABLE_'+feature+'=1' not in args:
+                raise RuntimeError('Editor export is missing '+feature)
+        for feature in ('APPLICATION','TRAINING','STATISTICS','COMPENSATION'):
+            if '-DREHAB_ENABLE_'+feature+'='+str(int(profile=='full')) not in args:
+                raise RuntimeError('Editor export feature/profile mismatch: '+feature)
         if ('-DREHAB_V13=1' in args) != (board=='v13'):
             raise RuntimeError('Editor export board does not match the compile commands.')
         args[0]=pathlib.Path(compiler).as_posix()
@@ -72,7 +83,7 @@ def capture(board='v12'):
                 entries[source]={'directory':ROOT.as_posix(), 'file':source,
                     'arguments':[pathlib.Path(host_compiler).as_posix(), *flags, '-c', source]}
     write_json(EDITOR/'compile_commands.json', list(entries.values()))
-    write_json(EDITOR/'context.json', {'profile':'full', 'board':board, 'firmware_units':firmware_count,
+    write_json(EDITOR/'context.json', {'profile':profile, 'board':board, 'firmware_units':firmware_count,
                                      'host_units':len(entries)-firmware_count})
     print(f'Editor context: {firmware_count} ARM + {len(entries)-firmware_count} host units; isolated {board} headers.')
 

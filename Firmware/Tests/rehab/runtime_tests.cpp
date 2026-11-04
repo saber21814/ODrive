@@ -655,7 +655,7 @@ static void test_physical_stop_revision() {
     reset_runtime();worker_once();CHECK(board_spi_services==1);
 }
 #endif
-static void test_locked_bench_voltage_default() {
+static void test_voltage_configuration_preserved() {
     const float cases[] = {0.0f, 27.0f, -1.0f, NAN};
     for(float configured : cases) {
         reset_runtime();
@@ -663,10 +663,6 @@ static void test_locked_bench_voltage_default() {
         odrv.config_.dc_bus_overvoltage_trip_level=configured;
         rp::early_init();
         const float actual=odrv.config_.dc_bus_overvoltage_trip_level;
-#if defined(REHAB_V13) && !REHAB_REAL_MOTOR
-        if(configured==0.0f) CHECK(actual==28.0f);
-        else
-#endif
         if(std::isnan(configured)) CHECK(std::isnan(actual));
         else CHECK(actual==configured);
         CHECK(odrv.config_.dc_bus_undervoltage_trip_level==8.0f);
@@ -677,7 +673,7 @@ static void test_locked_bench_voltage_default() {
 }
 int main() {
     struct Test { const char* name; void (*run)(); } tests[] = {
-        {"locked bench zero OV fallback and isolation",test_locked_bench_voltage_default},
+        {"voltage configuration is not overwritten",test_voltage_configuration_preserved},
         {"native idle task queue admission",test_idle_task_queue},
 #if REHAB_ENABLE_NETWORK
         {"SetNetwork through actual wire/runtime admission",test_network_idle_admission},

@@ -10,11 +10,11 @@ from build import source_digest
 
 FW = pathlib.Path(__file__).resolve().parents[2]
 OUT = FW/'build/rehab'
-PROFILES = ['baseline', 'native', 'hx711', 'network', 'peripherals', 'protection', 'training', 'statistics', 'full', 'bench']
+PROFILES = ['baseline', 'native', 'hx711', 'network', 'peripherals', 'protection', 'training', 'statistics', 'full']
 
 
 def inspect(name,board='v12',folder=None):
-    if name=='bench' and board!='v13': raise RuntimeError('Bench requires V1.3')
+    if name not in PROFILES or board not in ('v12','v13'): raise RuntimeError('Unsupported resource profile or board')
     folder = folder if folder is not None else (OUT/'v13' if board=='v13' and name!='baseline' else OUT)/name
     elf = folder/'ODriveFirmware.elf'
     sections = subprocess.check_output(['arm-none-eabi-size', '-A', str(elf)], text=True)
@@ -28,9 +28,8 @@ def inspect(name,board='v12',folder=None):
     errors = []
     if v12 and re.search(r'\baxis1\b', interface): errors.append('Single-axis endpoint table contains axis1')
     if not v12 and 'axis1' not in interface: errors.append('Original interface lost axis1')
-    hx = name in ('hx711', 'peripherals', 'protection', 'training', 'statistics', 'full', 'bench')
-    network = name in ('network', 'peripherals', 'protection', 'training', 'statistics', 'full', 'bench')
-    if ('::bench_handle(' in symbols) != (name=='bench'): errors.append('Native bench capability/symbol mismatch')
+    hx = name in ('hx711', 'peripherals', 'protection', 'training', 'statistics', 'full')
+    network = name in ('network', 'peripherals', 'protection', 'training', 'statistics', 'full')
     if ('rehab::drivers::Hx711::poll' in symbols) != hx: errors.append('HX711 feature/symbol mismatch')
     if ('network_main(' in symbols) != network: errors.append('Network task feature/symbol mismatch')
     if not v12 and 'rehab::platform::' in symbols: errors.append('Rehab runtime linked into original board')
@@ -64,10 +63,11 @@ def inspect(name,board='v12',folder=None):
     if build.get('status')!='passed': errors.append('Build was not successful; old artifacts are not evidence')
     if build.get('board')!=('original' if name=='baseline' else board): errors.append('Artifact board mismatch')
     if build.get('profile')!=name: errors.append('Artifact profile mismatch')
-    if build.get('bench_mode') is not (name=='bench'): errors.append('Artifact bench mode mismatch')
+    native = name=='peripherals' and board=='v13'
+    if build.get('native_control') is not native: errors.append('Artifact native-control mode mismatch')
     if name!='baseline':
-        if build.get('real_motor_enabled') is not (name=='bench'): errors.append('Artifact motor capability mismatch')
-        if build.get('motion_policy')!=('bounded_native_bench' if name=='bench' else 'rehab_inhibited'):
+        if build.get('real_motor_enabled') is not native: errors.append('Artifact motor capability mismatch')
+        if build.get('motion_policy')!=('native_board_control' if native else 'rehab_inhibited'):
             errors.append('Artifact motion policy mismatch')
     if build.get('source_sha256')!=source_digest(): errors.append('Artifact source digest is stale')
     return {'profile': name, 'flash_bytes': flash, 'sram_reserved_bytes': sram,
@@ -82,7 +82,7 @@ def main():
     p.add_argument('profile', choices=PROFILES+['all'], default='all', nargs='?')
     p.add_argument('--board',choices=['v12','v13'],default='v12')
     a=p.parse_args()
-    reports=[inspect(name,a.board) for name in PROFILES if a.profile==name or (a.profile=='all' and name!='bench')]
+    reports=[inspect(name,a.board) for name in PROFILES if a.profile==name or a.profile=='all']
     destination=OUT/'v13' if a.board=='v13' else OUT
     destination.mkdir(parents=True,exist_ok=True)
     (destination/'resources.json').write_text(json.dumps(reports, indent=2)+'\n', encoding='utf-8')

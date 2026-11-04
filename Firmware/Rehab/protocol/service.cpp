@@ -22,9 +22,6 @@ void Service::reject_admission(unsigned port,const Frame& in,Frame& out,Result r
 }
 void Service::disconnect(unsigned transport) {
     if(transport>=3)return;
-    const uint32_t old_session=connections_[transport].session;
-    if(old_session && hooks_.connection_lost)
-        hooks_.connection_lost(hooks_.ctx,transport,old_session);
     if(owner_transport_==transport && engine_.status().session) engine_.trip(FaultHeartbeat);
     connections_[transport].session=0;connections_[transport].replay.reset(0);
     // Keep the faulted lease. A new connection must clear/release it explicitly
@@ -45,8 +42,6 @@ void Service::handle(unsigned port,const Frame& in,Frame& out,uint32_t now,const
             for(const auto& c:connections_)if(c.session==session)session=0;
             if(!session) result=Result::Inhibited;
             else {
-                if(connection.session && hooks_.connection_lost)
-                    hooks_.connection_lost(hooks_.ctx,port,connection.session);
                 connection.session=session;connection.replay.reset(session);connection.staged=engine_.config();
                 out.session=session;Writer w{out.payload,sizeof(out.payload)};
                 w.word(uint32_t(Result::Ok));w.word(kVersion);w.word(kPayload);w.word(0x1201);
@@ -72,22 +67,10 @@ Result Service::execute(unsigned port,const Frame& in,Frame& out,uint32_t now,co
     const auto command=static_cast<Command>(in.command);
     const auto& s=engine_.status();
     Writer w{out.payload,sizeof(out.payload)};w.word(0);
-    // Append-only bench commands use the same session/replay gate as all others.
-    // Keep this before APPLICATION gating so peripheral-only builds can reject
-    // through a null hook without exposing any native motor write surface.
-    if(in.command>=uint16_t(Command::BenchStart) && in.command<=uint16_t(Command::BenchClear)) {
-        if(command==Command::BenchStart) {
-            // Existing phases retain the eight-byte request. Only motor R/L
-            // voltage and the explicit short open-loop phase have longer forms.
-            if(in.length!=8 && !(in.length==12 && u32(in.payload)==1) &&
-               !(in.length==16 && u32(in.payload)==6))return Result::InvalidConfig;
-        } else if(in.length)return Result::InvalidConfig;
-        if(!hooks_.bench)return Result::Unsupported;
-        const Result result=hooks_.bench(hooks_.ctx,port,in.command,in.session,in.payload,in.length,w);
-        if(!w.valid)return Result::InvalidConfig;
-        out.length=uint16_t(w.size);
-        return result;
-    }
+    // Retired IDs are rejected after the normal session/replay admission above,
+    // with no parameter parsing or motor side effects in any application profile.
+    if(in.command>=kRetiredCommandFirst && in.command<=kRetiredCommandLast)
+        return Result::Unsupported;
     if(command==Command::Status) {
         if(in.length)return Result::InvalidConfig;
         w.word(unsigned(s.state));w.word(unsigned(s.mode));w.word(s.faults);w.word(s.session);w.word(s.epoch);

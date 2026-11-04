@@ -33,8 +33,6 @@ if a.board=='v13':
     # Append DC ADC observer fields; no changes to framed Diagnostics.
     adc_words = ['phase_adc_sequence','phase_adc_packed','phase_adc_age_ms','phase_adc_errors']
     attrs.update({n:{'type':'readonly uint32','c_getter':'get_'+n+'()'} for n in adc_words})
-    bench_words = ['bench_enabled','bench_active','bench_stage','bench_state','bench_reason','bench_epoch']
-    attrs.update({n:{'type':'readonly uint32','c_getter':'get_'+n+'()'} for n in bench_words})
 intfs['RehabStatus']={'c_is_class':True,'attributes':attrs}
 data['valuetypes']['ODrive.StreamProtocolType']['values']['Rehab']={'doc':'Exclusive framed rehabilitation protocol. No ASCII or stdout on this stream.'}
 pathlib.Path(a.output).write_text(yaml.safe_dump(data,sort_keys=False,allow_unicode=True),encoding='utf-8')

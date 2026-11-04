@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V1.3 full/explicit bench entrypoint. Only the flash action accesses hardware."""
+"""V1.3 peripherals/native-control entrypoint. Only the flash action accesses hardware."""
 import argparse
 import contextlib
 import hashlib
@@ -14,7 +14,7 @@ import build as firmware_build
 import resources
 
 FW = Path(__file__).resolve().parents[2]
-ARTIFACTS = FW / 'build/rehab/v13/full'
+ARTIFACTS = FW / 'build/rehab/v13/peripherals'
 FILENAMES = tuple('ODriveFirmware.' + suffix for suffix in ('elf', 'hex', 'bin', 'map'))
 
 
@@ -23,14 +23,14 @@ def run_guard():
                    cwd=FW, check=True)
 
 
-def validate(folder=ARTIFACTS, profile='full'):
+def validate(folder=ARTIFACTS, profile='peripherals'):
     """Reject failed, mismatched, stale or modified output before programmer launch."""
-    if profile not in ('full', 'bench'): raise RuntimeError('Unsupported project profile')
+    if profile not in ('peripherals', 'full'): raise RuntimeError('Unsupported project profile')
     report = json.loads((folder / 'build.json').read_text(encoding='utf-8'))
-    bench = profile == 'bench'
+    native = profile == 'peripherals'
     required = {'status': 'passed', 'board': 'v13', 'profile': profile,
-                'real_motor_enabled': bench, 'bench_mode': bench,
-                'motion_policy': 'bounded_native_bench' if bench else 'rehab_inhibited'}
+                'real_motor_enabled': native, 'native_control': native,
+                'motion_policy': 'native_board_control' if native else 'rehab_inhibited'}
     for key, value in required.items():
         if report.get(key) != value or (isinstance(value, bool) and report.get(key) is not value):
             raise RuntimeError('Refusing artifact: invalid ' + key)
@@ -50,8 +50,8 @@ def validate(folder=ARTIFACTS, profile='full'):
     if not all(name in endpoints for name in ('rehab', 'board_revision', 'hardware_locked')):
         raise RuntimeError('Refusing artifact: missing V1.3 interface')
     elf = folder / 'ODriveFirmware.elf'
-    print('VERIFIED: rehab-v1.3 / ' + profile + (' / bounded native motor CAPABLE; boot IDLE, explicit command required'
-          if bench else ' / real motor LOCKED'), flush=True)
+    print('VERIFIED: rehab-v1.3 / ' + profile + (' / native motor commands CAPABLE; boot IDLE, explicit command required'
+          if native else ' / real motor LOCKED'), flush=True)
     print('ELF: ' + str(elf), flush=True)
     print('SHA256: ' + report['artifact_sha256'][elf.name], flush=True)
     return elf
@@ -91,19 +91,18 @@ def project_lock():
         path.unlink()
 
 
-def execute(action, dry_run=False, serial='', profile='full'):
+def execute(action, dry_run=False, serial='', profile='peripherals'):
     # Reject malformed parameters before starting a build, with no device access.
-    if action not in ('build', 'check', 'flash') or profile not in ('full', 'bench'):
+    if action not in ('build', 'check', 'flash') or profile not in ('peripherals', 'full'):
         raise RuntimeError('Unsupported action/profile')
-    folder = ARTIFACTS if profile == 'full' else FW/'build/rehab/v13/bench'
+    folder = ARTIFACTS if profile == 'peripherals' else FW/'build/rehab/v13/full'
     command = programmer_command(folder / 'ODriveFirmware.elf', serial)
     with project_lock():
         run_guard()
         if action in ('build', 'flash'):
             firmware_build.build(profile, jobs=1, board='v13')
         run_guard()
-        if profile == 'full': validate()
-        else: validate(folder, profile=profile)
+        validate(folder, profile=profile)
         if action == 'flash':
             print('PROGRAMMER argv: ' + json.dumps(command), flush=True)
             if dry_run:
@@ -117,7 +116,7 @@ def main():
     parser.add_argument('action', choices=('build', 'check', 'flash'))
     parser.add_argument('--dry-run', action='store_true', help='flash preflight only; never launch OpenOCD')
     parser.add_argument('--serial', default='', help='Optional ST-Link serial number')
-    parser.add_argument('--profile', choices=('full', 'bench'), default='full')
+    parser.add_argument('--profile', choices=('peripherals', 'full'), default='peripherals')
     args = parser.parse_args()
     try:
         execute(args.action, args.dry_run, args.serial, args.profile)

@@ -10,9 +10,10 @@ enum class Command : uint16_t {
     Hello=1, Status=2, SetConfig=3, GetConfig=4, CommitConfig=5,
     Acquire=6, Release=7, Enable=8, Start=9, Pause=10, Resume=11,
     Stop=12, ClearFaults=13, Heartbeat=14, Tare=15, Calibrate=16,
-    Statistics=17, Diagnostics=18, SetNetwork=19, GetLog=20, Finish=21,
-    BenchStart=22, BenchFeed=23, BenchStop=24, BenchStatus=25, BenchClear=26
+    Statistics=17, Diagnostics=18, SetNetwork=19, GetLog=20, Finish=21
 };
+// Removed test-control commands remain reserved; never reuse their wire IDs.
+constexpr uint16_t kRetiredCommandFirst=22, kRetiredCommandLast=26;
 struct Frame {
     uint8_t flags = 0;
     uint16_t command = 0, length = 0;

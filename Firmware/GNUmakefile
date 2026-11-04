@@ -5,7 +5,7 @@
 PYTHON ?= python
 PROJECT := $(PYTHON) -B Rehab/scripts/project.py
 
-.PHONY: all build flash flash-stlink2 flash-check check help build-bench flash-bench flash-check-bench check-bench
+.PHONY: all build flash flash-stlink2 flash-check check help
 all build:
 	$(PROJECT) build
 
@@ -19,18 +19,8 @@ flash-check:
 check:
 	$(PROJECT) check
 
-build-bench:
-	$(PROJECT) build --profile bench
-flash-bench:
-	$(PROJECT) flash --profile bench --serial "$(PROGRAMMER)"
-flash-check-bench:
-	$(PROJECT) flash --profile bench --dry-run --serial "$(PROGRAMMER)"
-check-bench:
-	$(PROJECT) check --profile bench
-
 help:
-	@echo make: build and validate V1.3 full, motor locked
-	@echo make flash: build, validate, program and verify V1.3 full using ST-Link
+	@echo make: build and validate V1.3 peripherals, native motor commands enabled, boot idle
+	@echo make flash: build, validate, program and verify V1.3 peripherals using ST-Link
 	@echo make flash-check: same preflight without accessing hardware
-	@echo make flash-bench: explicit bounded native motor bench, boot idle
 	@echo make -f Makefile: explicit original-board entrypoint, not for V1.3

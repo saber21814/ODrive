@@ -102,9 +102,7 @@ void check_valid_load() {
 }
 void test_current_format_round_trip() {
     reset_storage();
-#if defined(REHAB_V13) && REHAB_BENCH
-    CHECK(config_version == 0x13b1);
-#elif defined(REHAB_V13)
+#if defined(REHAB_V13)
     CHECK(config_version == 0x1301);
 #elif defined(REHAB_V12)
     CHECK(config_version == 0x1201);
@@ -118,6 +116,7 @@ void test_current_format_round_trip() {
 }
 void test_equal_payload_version_isolation() {
     reset_storage();
+    CHECK(config_version!=0x13b1); // Removed test-only image must never be current.
     const auto original = image_for_version(0x0001);
     const auto rehab = image_for_version(0x1201);
     CHECK(original.size() == rehab.size() && original.size() == image_size);

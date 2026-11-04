@@ -15,18 +15,18 @@ import build
 import editor
 import resources
 
-class BenchBuildTests(unittest.TestCase):
+class ProjectProfilesTests(unittest.TestCase):
     def setUp(self):
         self.temp_root=FW/'build/rehab/tests'
         self.temp_root.mkdir(parents=True,exist_ok=True)
 
-    def test_v12_bench_rejected_before_writing(self):
+    def test_retired_profile_rejected_before_writing(self):
         with patch.object(build, 'OUT') as out:
             with self.assertRaises(RuntimeError): build.build('bench',board='v12')
             out.mkdir.assert_not_called()
 
     def test_profile_isolation_report_and_config_restore(self):
-        for profile,board in [('bench','v13'),('full','v13'),('full','v12'),('baseline','v12')]:
+        for profile,board in [('peripherals','v13'),('peripherals','v12'),('full','v13'),('full','v12'),('baseline','v12')]:
             with self.subTest(profile=profile,board=board), tempfile.TemporaryDirectory(dir=self.temp_root) as tmp:
                 root=pathlib.Path(tmp);out=root/'build/rehab';out.mkdir(parents=True)
                 (root/'autogen').mkdir()
@@ -50,31 +50,32 @@ class BenchBuildTests(unittest.TestCase):
                 self.assertFalse((out/'recovery.json').exists())
                 self.assertEqual(len(captured),1)
                 config=captured[0]
-                bench=profile=='bench'
-                self.assertIn('CONFIG_REHAB_BENCH='+str(bench).lower(),config)
+                native=profile=='peripherals' and board=='v13'
+                self.assertNotIn('CONFIG_REHAB_BENCH=',config)
                 if profile!='baseline': self.assertIn('CONFIG_REHAB_REAL_MOTOR=false',config)
-                if bench:
-                    for option in build.OPTIONS: self.assertIn('CONFIG_REHAB_'+option+'=true',config)
-                    self.assertIn('CONFIG_REHAB_STAGE=6',config)
-                if profile=='full': capture.assert_called_once_with(board)
+                if profile=='peripherals':
+                    for option in ('HX711','NETWORK','PROTOCOL'): self.assertIn('CONFIG_REHAB_'+option+'=true',config)
+                    for option in ('APPLICATION','TRAINING','STATISTICS','COMPENSATION'): self.assertIn('CONFIG_REHAB_'+option+'=false',config)
+                    self.assertIn('CONFIG_REHAB_STAGE=2',config)
+                if profile=='full' or native: capture.assert_called_once_with(board,profile)
                 else: capture.assert_not_called()
                 folder=(out/'v13' if board=='v13' and profile!='baseline' else out)/profile
                 report=json.loads((folder/'build.json').read_text())
-                self.assertIs(report['bench_mode'],bench)
-                self.assertIs(report['real_motor_enabled'],None if profile=='baseline' else bench)
+                self.assertIs(report['native_control'],native)
+                self.assertNotIn('bench_mode',report)
+                self.assertIs(report['real_motor_enabled'],None if profile=='baseline' else native)
                 self.assertEqual(report['motion_policy'], 'original_board_native' if profile=='baseline' else
-                                 'bounded_native_bench' if bench else 'rehab_inhibited')
+                                 'native_board_control' if native else 'rehab_inhibited')
 
-    def test_resource_bench_symbol_and_metadata(self):
+    def test_resource_profile_and_metadata(self):
         with tempfile.TemporaryDirectory(dir=self.temp_root) as tmp:
             folder=pathlib.Path(tmp)
             (folder/'endpoints.hpp').write_text('rehab board_revision hardware_locked')
-            report={'status':'passed','board':'v13','profile':'bench','bench_mode':True,
-                    'real_motor_enabled':True,'motion_policy':'bounded_native_bench','source_sha256':'src'}
+            report={'status':'passed','board':'v13','profile':'peripherals','native_control':True,
+                    'real_motor_enabled':True,'motion_policy':'native_board_control','source_sha256':'src'}
             symbols='''20000100 00000010 b spi1_arbiter
 20000200 00000010 b spi3_arbiter
 20000300 00000010 b rehab::platform::(anonymous namespace)::commands
-08000100 00000010 t rehab::platform::(anonymous namespace)::bench_handle(void*)
 08000120 00000010 t rehab::platform::(anonymous namespace)::network_main(void*)
 08000140 00000010 T rehab::drivers::Hx711::poll(unsigned long)
 08000160 00000010 V vtable for V13GateDriver
@@ -84,20 +85,38 @@ class BenchBuildTests(unittest.TestCase):
 080001e0 00000010 T rehab_isr_max_cycles
 08000200 00000010 T rehab_isr_count
 '''
-            def inspect(text, profile='bench'):
+            def inspect(text, profile='peripherals'):
                 (folder/'build.json').write_text(json.dumps(report))
                 with patch.object(resources,'source_digest',return_value='src'), \
                         patch.object(resources.subprocess,'check_output',side_effect=['.text 512 134217728',text]):
                     return resources.inspect(profile,'v13',folder=folder)['errors']
             self.assertEqual(inspect(symbols),[])
-            self.assertIn('Native bench capability/symbol mismatch',inspect(symbols.replace('::bench_handle(', '::wrong(')))
-            report['bench_mode']=1
-            self.assertIn('Artifact bench mode mismatch',inspect(symbols))
-            report['bench_mode']=True;report['real_motor_enabled']=1
+            report['native_control']=1
+            self.assertIn('Artifact native-control mode mismatch',inspect(symbols))
+            report['native_control']=True;report['real_motor_enabled']=1
             self.assertIn('Artifact motor capability mismatch',inspect(symbols))
-            report.update(profile='full',bench_mode=False,real_motor_enabled=False,motion_policy='rehab_inhibited')
-            self.assertIn('Native bench capability/symbol mismatch',inspect(symbols,'full'))
-            self.assertEqual(inspect(symbols.replace('::bench_handle(', '::not_bench('),'full'),[])
+            report.update(profile='full',native_control=False,real_motor_enabled=False,motion_policy='rehab_inhibited')
+            self.assertEqual(inspect(symbols,'full'),[])
         with self.assertRaises(RuntimeError): resources.inspect('bench','v12')
+
+    def test_editor_profile_contract(self):
+        import sqlite3
+        for profile in ('full','peripherals'):
+            with tempfile.TemporaryDirectory(dir=self.temp_root) as tmp:
+                root=pathlib.Path(tmp); (root/'.tup').mkdir(); (root/'autogen').mkdir()
+                for name in editor.HEADER_NAMES:
+                    (root/'autogen'/name).write_text('RehabStatusIntf '+profile)
+                flags=['-DREHAB_V12=1','-DREHAB_V13=1','-DREHAB_STAGE='+str(6 if profile=='full' else 2)]
+                flags+=['-DREHAB_ENABLE_'+n+'=1' for n in ('HX711','NETWORK','PROTOCOL')]
+                flags+=['-DREHAB_ENABLE_'+n+'='+str(int(profile=='full')) for n in ('APPLICATION','TRAINING','STATISTICS','COMPENSATION')]
+                with sqlite3.connect(root/'.tup/db') as db:
+                    db.execute('CREATE TABLE node (name TEXT,type INTEGER)')
+                    db.execute('INSERT INTO node VALUES (?,1)', ('arm-none-eabi-g++ -c MotorControl/main.cpp '+' '.join(flags),))
+                db.close()
+                with patch.object(editor,'ROOT',root),patch.object(editor.shutil,'which',side_effect=lambda n: 'C:/tool/g++.exe' if n.startswith('arm-') else None),contextlib.redirect_stdout(io.StringIO()):
+                    editor.capture('v13',profile)
+                    context=root/('build/rehab/v13/editor' if profile=='full' else 'build/rehab/v13/peripherals/editor')
+                    self.assertEqual(json.loads((context/'context.json').read_text())['profile'],profile)
+                    with self.assertRaises(RuntimeError): editor.capture('v13','peripherals' if profile=='full' else 'full')
 
 if __name__=='__main__': unittest.main()

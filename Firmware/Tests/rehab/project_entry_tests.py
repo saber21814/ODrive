@@ -20,8 +20,8 @@ class ProjectEntryTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(dir=FW / 'build/rehab/tests')
         self.addCleanup(self.temp.cleanup)
         self.folder = Path(self.temp.name)
-        self.report = {'status': 'passed', 'board': 'v13', 'profile': 'full',
-                       'real_motor_enabled': False, 'bench_mode': False, 'motion_policy': 'rehab_inhibited',
+        self.report = {'status': 'passed', 'board': 'v13', 'profile': 'peripherals',
+                       'real_motor_enabled': True, 'native_control': True, 'motion_policy': 'native_board_control',
                        'source_sha256': 'source', 'artifact_sha256': {}}
         for name in project.FILENAMES:
             data = ('fixture ' + name).encode()
@@ -33,7 +33,7 @@ class ProjectEntryTests(unittest.TestCase):
     def write_report(self):
         (self.folder / 'build.json').write_text(json.dumps(self.report))
 
-    def validate(self, profile='full'):
+    def validate(self, profile='peripherals'):
         with patch.object(project.firmware_build, 'source_digest', return_value='source'), \
                 patch.object(project.resources, 'inspect', return_value={'errors': []}), \
                 contextlib.redirect_stdout(io.StringIO()):
@@ -44,9 +44,9 @@ class ProjectEntryTests(unittest.TestCase):
 
     def test_wrong_metadata_fails_closed(self):
         for key, value in [('board', 'original'), ('board', 'v12'), ('status', 'failed'),
-                           ('profile', 'native'), ('real_motor_enabled', True),
+                           ('profile', 'native'), ('real_motor_enabled', False),
                            ('real_motor_enabled', 0), ('motion_policy', 'original_board_native'),
-                           ('bench_mode', True), ('bench_mode', 0), ('bench_mode', None),
+                           ('native_control', False), ('native_control', 1), ('native_control', None),
                            ('source_sha256', 'stale')]:
             with self.subTest(key=key, value=value):
                 previous = self.report[key]
@@ -78,9 +78,9 @@ class ProjectEntryTests(unittest.TestCase):
 
     def test_openocd_uses_dedicated_elf_and_readback(self):
         command = project.programmer_command(project.ARTIFACTS / 'ODriveFirmware.elf', 'ABC123')
-        self.assertIn('flash write_image erase {build/rehab/v13/full/ODriveFirmware.elf}', command)
-        self.assertIn('verify_image {build/rehab/v13/full/ODriveFirmware.elf}', command)
-        self.assertLess(command.index('verify_image {build/rehab/v13/full/ODriveFirmware.elf}'),
+        self.assertIn('flash write_image erase {build/rehab/v13/peripherals/ODriveFirmware.elf}', command)
+        self.assertIn('verify_image {build/rehab/v13/peripherals/ODriveFirmware.elf}', command)
+        self.assertLess(command.index('verify_image {build/rehab/v13/peripherals/ODriveFirmware.elf}'),
                         command.index('reset run'))
         self.assertIn('hla_serial {ABC123}', command)
         for serial in ('bad;shutdown', 'bad} reset run', 'bad\nreset'):
@@ -91,7 +91,7 @@ class ProjectEntryTests(unittest.TestCase):
         def build(*args, **kwargs):
             events.append(('build', args, kwargs))
             if build_error: raise RuntimeError('compile failed')
-        def validate():
+        def validate(*args, **kwargs):
             events.append('validate')
             if validate_error: raise RuntimeError('invalid output')
         with patch.object(project, 'project_lock', contextlib.nullcontext), \
@@ -113,7 +113,7 @@ class ProjectEntryTests(unittest.TestCase):
 
     def test_flash_order_and_fixed_target(self):
         self.assertEqual(self.exercise('flash'),
-                         ['guard', ('build', ('full',), {'jobs': 1, 'board': 'v13'}),
+                         ['guard', ('build', ('peripherals',), {'jobs': 1, 'board': 'v13'}),
                           'guard', 'validate', 'programmer'])
 
     def test_failed_build_or_validation_never_programs(self):
@@ -127,50 +127,50 @@ class ProjectEntryTests(unittest.TestCase):
                     with project.project_lock(): self.fail('concurrent operation admitted')
             with project.project_lock(): pass
 
-    def test_bench_metadata_and_cross_profile_rejection(self):
-        self.report.update(profile='bench', bench_mode=True, real_motor_enabled=True,
-                           motion_policy='bounded_native_bench')
+    def test_full_metadata_and_cross_profile_rejection(self):
+        self.report.update(profile='full', native_control=False, real_motor_enabled=False,
+                           motion_policy='rehab_inhibited')
         self.write_report()
-        self.assertEqual(self.validate('bench'), self.folder/'ODriveFirmware.elf')
+        self.assertEqual(self.validate('full'), self.folder/'ODriveFirmware.elf')
+        with self.assertRaises(RuntimeError): self.validate('peripherals')
+        self.report['real_motor_enabled']=True;self.write_report()
         with self.assertRaises(RuntimeError): self.validate('full')
-        for key, value in [('bench_mode', 1), ('bench_mode', False), ('bench_mode', None),
-                           ('real_motor_enabled', 1), ('real_motor_enabled', False),
-                           ('motion_policy', 'rehab_inhibited'), ('board', 'v12'), ('profile', 'full')]:
-            with self.subTest(key=key,value=value):
-                previous=self.report[key];self.report[key]=value;self.write_report()
-                with self.assertRaises(RuntimeError): self.validate('bench')
-                self.report[key]=previous;self.write_report()
 
-    def test_full_cannot_be_selected_as_bench(self):
-        with self.assertRaises(RuntimeError): self.validate('bench')
+    def test_retired_profile_rejected_before_lock_or_program(self):
+        for profile in ('bench','bad'):
+            with patch.object(project, 'project_lock') as lock:
+                with self.assertRaises(RuntimeError): project.execute('flash', profile=profile)
+                lock.assert_not_called()
+            with self.assertRaises(RuntimeError): self.validate(profile)
 
-    def test_bench_explicit_target_and_dry_run(self):
-        for dry_run in (True, False):
+    def test_explicit_full_target_and_dry_run(self):
+        for dry_run in (True,False):
             with patch.object(project, 'project_lock', contextlib.nullcontext), \
                     patch.object(project, 'run_guard'), \
                     patch.object(project.firmware_build, 'build') as build, \
                     patch.object(project, 'validate') as validate, \
                     patch.object(project.subprocess, 'run') as programmer, \
                     contextlib.redirect_stdout(io.StringIO()):
-                project.execute('flash', dry_run=dry_run, profile='bench')
-                build.assert_called_once_with('bench', jobs=1, board='v13')
-                validate.assert_called_once_with(project.FW/'build/rehab/v13/bench', profile='bench')
+                project.execute('flash', dry_run=dry_run, profile='full')
+                build.assert_called_once_with('full', jobs=1, board='v13')
+                validate.assert_called_once_with(project.FW/'build/rehab/v13/full',profile='full')
                 if dry_run: programmer.assert_not_called()
-                else:
-                    args=programmer.call_args.args[0]
-                    self.assertIn('verify_image {build/rehab/v13/bench/ODriveFirmware.elf}',args)
-        with patch.object(project, 'project_lock') as lock:
-            with self.assertRaises(RuntimeError): project.execute('flash',profile='bad')
-            lock.assert_not_called()
+                else: self.assertIn('verify_image {build/rehab/v13/full/ODriveFirmware.elf}', programmer.call_args.args[0])
 
-    def test_bench_validation_failure_never_programs(self):
-        with patch.object(project, 'project_lock', contextlib.nullcontext), \
-                patch.object(project, 'run_guard'), \
-                patch.object(project.firmware_build, 'build'), \
-                patch.object(project, 'validate', side_effect=RuntimeError('invalid bench')), \
-                patch.object(project.subprocess, 'run') as programmer:
-            with self.assertRaises(RuntimeError): project.execute('flash', profile='bench')
-            programmer.assert_not_called()
+    def test_cli_and_vscode_default_target(self):
+        with patch.object(project.sys, 'argv', ['project.py','check']), patch.object(project, 'execute') as execute:
+            self.assertEqual(project.main(),0)
+            execute.assert_called_once_with('check',False,'','peripherals')
+        tasks=json.loads((FW/'.vscode/tasks.json').read_text())['tasks']
+        for label in ('build','flash - ST-Link'):
+            task=next(t for t in tasks if t['label']==label)
+            self.assertNotIn('--profile',task['args'])
+        launch=(FW/'.vscode/launch.json').read_text()
+        self.assertIn('/build/rehab/v13/peripherals/ODriveFirmware.elf',launch)
+        config=json.loads((FW/'.vscode/c_cpp_properties.json').read_text())['configurations'][0]
+        self.assertIn('/v13/peripherals/editor/',config['compileCommands'])
+        self.assertIn('REHAB_STAGE=2',config['defines'])
+        self.assertIn('REHAB_ENABLE_APPLICATION=0',config['defines'])
 
 
 if __name__ == '__main__':

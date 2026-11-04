@@ -256,3 +256,40 @@ Validation at review: six targeted host suites pass (adapter3876 checks), eight 
 | `Firmware/Rehab/platform/runtime.cpp` | `cdfefa0a130a00e23fd2cc107b24fa22a07f9bd43061c4769ed74051db0a447c` | `6e38fe8cbf6d0d1e2b2e769fbf899f92624f710eee9bbfcd30f5e3b93ad8a87d` |
 | `Firmware/Rehab/protocol/service.cpp` | `eeae5deaec1764f4eab7b5bab076e4c9d59ae33697a45d0f5d624bbcb80908d8` | `11f753c6aab7a6d14030f1877f6504cd46ab6aa8be1503995f58e21ee9d944f3` |
 | `Firmware/Rehab/scripts/bench.py` | `ca7afe0c0b16d338d2be4c55a290ff7b7ddde1b672d6424c8677f140cb64d6dc` | `56ea1abe1bffda48c30b9b5c6302dc4af8c03c7642667987c212b9903ed8498a` |
+
+
+## 2026-11-04 retire bench and restore native V1.3 peripheral control
+
+User explicitly requested removal of the added bench admission and parameter overrides while retaining V1.3 hardware, USB, network, HX711 and temperature sampling. Default project/make/VSCode target is the existing peripherals profile. Only V1.3 stage2 with HX711/network/protocol enabled and application disabled admits native control; application/full commissioning flags remain unverified and unchanged.
+
+Bench phase/lease/pass flags, native-write prohibition, fixed motor/current/voltage/temperature parameters, test CLI and build target are removed. Actual STOP/latch/DRV readiness and original native fault checks remain. Brake timer permission is static board capability so safe native CCR writes and timer initialization remain possible during STOP/gate faults. Boot explicitly requests IDLE and disables startup motion, without replacing native user motor/encoder/brake parameters. No network lease or automatic watchdog feed controls native motion.
+
+Commands22..26 remain reserved Unsupported after session/replay validation. Prior109 V1.3 attributes and all V1.2 schema bytes are unchanged; only six appended bench properties are removed. NVM is restored to0x1301 by removing the13B1 branch; no native config data structures or algorithms are edited. All43 other MotorControl files match this turn's before snapshot. Historical logs/archives remain retained; no reset, baseline refresh or whitelist expansion.
+
+Independent bench_safety_review approved runtime/test registration and native/STOP/brake behavior; remove_bench_build independently approved protocol/schema/NVM; remove_bench_protocol independently approved build/editor/entrypoints, including the corrected shell-safe help text. Twenty targeted offline suites pass across protocol/NVM, runtime/ingress/drivers and build-entry tests. Native runtime has76 host checks; these model interfaces, not electrical behavior. Final ARM/resource/guard results are recorded in build/rehab/remove_bench_20261104/delivery.json. No device accessed, flashed or driven during implementation.
+
+The prior two low-current calibration attempts remain failed evidence, not accepted R/L. Native system negative-current default remains-0.01A; restoring the native motor-level infinities does not guarantee calibration success. Removal of the temporary28V fallback may expose default OV=0, which must be explicitly configured and read back for the actual24V test before clearing faults or requesting motion. Physical STOP/current accuracy/regen remain unqualified.
+
+Only these individually reviewed hashes/deletions are registered:
+
+| File | Previous SHA256 | Reviewed SHA256 |
+|---|---|---|
+| `Firmware/Rehab/platform/runtime.cpp` | `6e38fe8cbf6d0d1e2b2e769fbf899f92624f710eee9bbfcd30f5e3b93ad8a87d` | `3d39727bfd4f9a6044b3e82c73ac9281c6c4c450a558f281e694353a6c8adc04` |
+| `Firmware/Rehab/scripts/test.py` | `f05366610317edf70a3dacf01e7966df1f7b1638363f6474562d9b8b151da797` | `2074cff2892d70cb0a529f55091a03d3f88dc59366365c86ba24549bf25667e9` |
+| `Firmware/MotorControl/nvm_config.hpp` | `dd1cb7087870492f902f6a9b922bcb289cf7cf27dd8871d85af6d162b653ad8e` | `962a30d245fdf71b645d6e137f696cf232d422d83497ead4c305437e4577b63d` |
+| `Firmware/Rehab/interface.py` | `1a55365338dab103a742100f66b0bb9b3c367f50206aff4397d0142ebc76cf36` | `aa1601d399af9d4365bdcd259cc990af515db8c6c95f8680bb247bfa06c605d4` |
+| `Firmware/Rehab/platform/diagnostics.hpp` | `0adcf4f6dc3cdca5c19b9f6f2eff05cb1a6f87fb5ac198bae66c1acb8c692231` | `0a47621ac20a3213bddd0c4e40a0e55f9083fd2b6ab092b713abd8088c10d2ec` |
+| `Firmware/Rehab/protocol/frame.hpp` | `867e9c1b04ce09f56b66bc0f9d5e358f277a9c80691d36a6aba72fef00067a08` | `39d50e4844839f65dbf4af1e4365244da9ba3f06b667d72b2094a9d7fa2db295` |
+| `Firmware/Rehab/protocol/service.hpp` | `2f0bec3fdf8013628ade11b029f3318f7c17b5506d654fe04548863ebd5d8c6b` | `54681d9acedc69ea952f5b0789cbf529bc0b31dd06083d85d385280da2f5c946` |
+| `Firmware/Rehab/protocol/service.cpp` | `11f753c6aab7a6d14030f1877f6504cd46ab6aa8be1503995f58e21ee9d944f3` | `c009a16c5af7c830ca979f2ef1297bac1a2626f06b3f018acf929e7a065792a1` |
+| `Firmware/GNUmakefile` | `1905c5c0dade0e2b86c1b246bd087457ee9d9d6a32a9bf849433cb65a3ac2ea8` | `4bb8f8995c3af26198a9ca29af1daa1b5219448164c213cc692264dd9f583dc5` |
+| `Firmware/Tupfile.lua` | `ffef970f9b1b78e4ea445b8249fdbebac315565b3a960fe29a5249131b326926` | `b833b852b626b22b59631f3421a7c51c62f4ecd4dea1d0fba3a92f42c597cef2` |
+| `Firmware/Rehab/scripts/build.py` | `45e74d9ba5ce364e33f18cc8e91ec8d1a4203d93cc594a16e8d3a869619d0fca` | `98ab4292a62c73c089ac69eca44a3ff952acfb587d1bd202d5023bc468f87eb3` |
+| `Firmware/Rehab/scripts/project.py` | `9cf98c1e8964e9bcaad9be72e9cdc47dc769a575169ac553f60d45cd3565a86f` | `f3e964f1ed635537d3fffd806ad7c0940ca990ed7f76bc2a4f16fa14194ec965` |
+| `Firmware/Rehab/scripts/resources.py` | `1f56a2e82a9a74adf7cffa02e5f7aa1e57dc707aaab2fd73857aab826f18cfee` | `9b44a2506714422095b5c0511e3368c2160aef3e4587a95b7f63060ed1f02197` |
+| `Firmware/Rehab/scripts/editor.py` | `0452185a896a1886bbd549f294627c8b92795f5cb7590b13a61fd208513b145c` | `b08bf8d0832ef1544fd9cd2161fc1282a9b1b83e429ec79c2793b0d9202bb1e9` |
+| `Firmware/.vscode/c_cpp_properties.json` | `50d5d09d37f2a6b599a8eb7e7363b3540de19c0608243a032414f2f0b11c826b` | `89356a7a5157e2dd81bd88a67e038e4183e4f59c2ea4e0eaa0b05412f977d136` |
+| `Firmware/.vscode/launch.json` | `9c8b47613351fe1c911e34992d591470bfeb45b9ff23ecaecdae55800a52f0dd` | `93f6bf8a2cdf07a5971f1a36251c8e7e369c2bdd68646c77032b99ddefa85533` |
+| `Firmware/Rehab/platform/bench_native.hpp` | `7250be3972a87992009f8fe46a8cebd9a7c7ecf8c21ba121c19d11ca98f0a239` | deleted |
+| `Firmware/Rehab/platform/bench_session.hpp` | `0cc5452f1a6b6980ce5eacf4585ac4cdfe9b4eeda4c6f112db8da3df5aa56a15` | deleted |
+| `Firmware/Rehab/scripts/bench.py` | `56ea1abe1bffda48c30b9b5c6302dc4af8c03c7642667987c212b9903ed8498a` | deleted |

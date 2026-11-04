@@ -16,8 +16,6 @@ struct Hooks {
     bool (*read_log)(void*,uint32_t&,uint32_t&,uint32_t&)=nullptr;
     void (*command_log)(void*,uint16_t,Result)=nullptr;
     void (*emergency_stop)(void*)=nullptr;
-    Result (*bench)(void*,unsigned,uint16_t,uint32_t,const uint8_t*,size_t,Writer&)=nullptr;
-    void (*connection_lost)(void*,unsigned,uint32_t)=nullptr;
 };
 class Service {
 public:

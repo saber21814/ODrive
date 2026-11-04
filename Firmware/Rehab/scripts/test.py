@@ -99,15 +99,9 @@ def specifications(quick):
             flags=STRICT + ["-Wdouble-promotion"],
         ))
 
-    suites.append(suite('bench_session',['Tests/rehab/bench_session_tests.cpp'],
-        production=['Rehab/platform/bench_session.hpp']))
-    for application in (0,1):
-        suites.append(suite('bench_service_a'+str(application), SERVICE+['Tests/rehab/bench_service_tests.cpp'],
-            definitions=['REHAB_ENABLE_APPLICATION='+str(application)],production=SERVICE))
-    for name,source,production in (
-        ('bench_client','Tests/rehab/bench_client_tests.py','Rehab/scripts/bench.py'),
-        ('bench_build','Tests/rehab/bench_build_tests.py','Rehab/scripts/build.py')):
-        item=suite(name,[source],production=[production]);item['python']=True;suites.append(item)
+    profiles=suite('project_profiles',['Tests/rehab/project_profiles_tests.py'],
+        production=['Rehab/scripts/build.py','Rehab/scripts/project.py','Rehab/scripts/resources.py'])
+    profiles['python']=True;suites.append(profiles)
 
     driver_sources = [
         "Rehab/drivers/spi_arbiter.cpp", "Rehab/drivers/hx711.cpp", "Rehab/drivers/ch394.cpp"
@@ -163,14 +157,17 @@ def specifications(quick):
     network_runtime['notes'] = network_runtime['notes'] + [
         'Actual SetNetwork admission and wire response; CH394 transport is a disconnected host carrier.']
     suites.append(network_runtime)
-    bench_runtime=network_runtime.copy()
-    bench_runtime['name']='bench_runtime_v13'
-    bench_runtime['definitions']=network_runtime['definitions']+['REHAB_BENCH=1']
-    bench_runtime['sources']=['Tests/rehab/bench_runtime_tests.cpp','Rehab/platform/isr_timing.cpp']+SERVICE
-    bench_runtime['production_sources']=network_runtime['production_sources']+['Rehab/platform/bench_native.hpp','Rehab/platform/bench_session.hpp']
-    bench_runtime['notes']=['Actual bench adapter/runtime; native algorithms and hardware are mocked, not physical acceptance.']
-    suites.append(bench_runtime)
-
+    native_runtime=network_runtime.copy()
+    native_runtime['name']='runtime_native_v13'
+    replacements={'REHAB_ENABLE_APPLICATION=1':'REHAB_ENABLE_APPLICATION=0',
+                  'REHAB_ENABLE_HX711=0':'REHAB_ENABLE_HX711=1','REHAB_STAGE=6':'REHAB_STAGE=2',
+                  'REHAB_ENABLE_TRAINING=1':'REHAB_ENABLE_TRAINING=0',
+                  'REHAB_ENABLE_STATISTICS=1':'REHAB_ENABLE_STATISTICS=0',
+                  'REHAB_ENABLE_COMPENSATION=1':'REHAB_ENABLE_COMPENSATION=0'}
+    native_runtime['definitions']=[replacements.get(d,d) for d in network_runtime['definitions']]
+    native_runtime['sources']=['Tests/rehab/native_runtime_tests.cpp','Rehab/platform/isr_timing.cpp']+SERVICE
+    native_runtime['notes']=['Actual peripheral/native interface gates; hardware and native motor algorithms are carriers, not physical acceptance.']
+    suites.append(native_runtime)
 
     suites.append(suite(
         "native_ingress", ["Tests/rehab/ingress_tests.cpp", "Rehab/platform/isr_timing.cpp"] + SERVICE,
@@ -193,11 +190,11 @@ def specifications(quick):
         production=["Rehab/platform/stream.cpp", "fibre-cpp/include/fibre/async_stream.hpp"],
         notes=["Actual Stream adapter and Fibre async interfaces; endpoint and byte-queue carriers test partial transfers, reconnects and delayed completion callbacks."],
     ))
-    for board in ('native','v12','v13','bench'):
+    for board in ('native','v12','v13'):
         suites.append(suite(
-            {'native':'nvm_native','v12':'nvm_rehab','v13':'nvm_rehab_v13','bench':'nvm_bench_v13'}[board], ["Tests/rehab/nvm_tests.cpp"],
+            {'native':'nvm_native','v12':'nvm_rehab','v13':'nvm_rehab_v13'}[board], ["Tests/rehab/nvm_tests.cpp"],
             includes=[".", "fibre-cpp/include"],
-            definitions=(["REHAB_V12=1"] if board!='native' else [])+(["REHAB_V13=1"] if board in ('v13','bench') else [])+(['REHAB_BENCH=1'] if board=='bench' else []),
+            definitions=(["REHAB_V12=1"] if board!='native' else [])+(["REHAB_V13=1"] if board=='v13' else []),
             production=["MotorControl/nvm_config.hpp", "Drivers/STM32/stm32_nvm.h", "fibre-cpp/crc.hpp"],
             notes=["Actual ConfigManager and CRC implementation with an in-memory NVM carrier; tests two-pass persistence, version-specific CRC seeds, truncation, corruption and interrupted writes."],
         ))

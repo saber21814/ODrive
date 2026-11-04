@@ -1,10 +1,5 @@
 #include "runtime.hpp"
 #include "commissioning.hpp"
-#include "bench_session.hpp"
-#include <new>
-#if REHAB_BENCH && (!defined(REHAB_V13) || REHAB_REAL_MOTOR || !REHAB_ENABLE_NETWORK || !REHAB_ENABLE_PROTOCOL)
-#error "Bench requires V1.3 network/protocol and a disabled production motor flag"
-#endif
 #include "Rehab/core/engine.hpp"
 #include "Rehab/protocol/service.hpp"
 #include "Rehab/protocol/command_queue.hpp"
@@ -26,6 +21,13 @@
 
 namespace rehab { namespace platform {
 namespace {
+// The existing V1.3 peripherals profile exposes native motor control while
+// keeping the application/training controller out of the command path.
+#if defined(REHAB_V13) && REHAB_STAGE==2 && REHAB_ENABLE_NETWORK && REHAB_ENABLE_PROTOCOL && REHAB_ENABLE_HX711 && !REHAB_ENABLE_APPLICATION
+constexpr bool native_board_control=true;
+#else
+constexpr bool native_board_control=false;
+#endif
 Engine engine;
 Feedback feedback;
 Status published;
@@ -47,14 +49,6 @@ struct Limits {
     uint32_t target_us=0,sensor_us=0;
 } limits;
 bool started=false;
-#if REHAB_BENCH
-rehab::bench::Session bench_session;
-Result bench_handle(void*,unsigned,uint16_t,uint32_t,const uint8_t*,size_t,wire::Writer&);
-void bench_connection_lost(void*,unsigned,uint32_t);
-void bench_quiesce();
-void bench_revoke_on_trip(uint32_t why);
-void bench_advance();
-#endif
 
 template<size_t N> class SpscBytes {
 public:
@@ -126,9 +120,6 @@ bool stop_asserted() { return board_access::stop_asserted(); }
 void trip(uint32_t why,bool event=true) {
     bool new_event=false;
     CRITICAL_SECTION() {
-#if REHAB_BENCH
-        bench_revoke_on_trip(why);
-#endif
         const bool new_fault=bool(why&~latched);latched|=why;
         new_event=event || new_fault;
         if(new_event){++fault_generation;command_boundary();}
@@ -146,7 +137,10 @@ void physical_stop(bool edge) {
     trip(FaultStop,edge);
     board_access::physical_stop(edge);
 }
-bool hardware_ready() {return commissioning::may_energize && !latched && !stop_asserted() && board_access::gate_ready();}
+bool hardware_ready() {
+    return (native_board_control || commissioning::may_energize) && !latched &&
+        !stop_asserted() && board_access::gate_ready() && (!native_board_control || !odrv.any_error());
+}
 Feedback capture() {
     Feedback f;
     CRITICAL_SECTION() {f=feedback;}
@@ -174,9 +168,7 @@ bool quiescent_axis() {
     return false; // A queue without a terminator is not a proven idle state.
 }
 Result take_control(void*,uint32_t session,const Feedback&) {
-#if REHAB_BENCH
-    (void)session;return Result::Inhibited; // Training is never admitted by the bench lease.
-#endif
+    if(native_board_control)return Result::Unsupported;
     CRITICAL_SECTION() {
         if(owner_session || native_writers || !quiescent_axis())return Result::Busy;
         // Reject autonomous native sources before handing over; disabling just
@@ -279,9 +271,6 @@ wire::Hooks hooks={nullptr,new_session,take_control,release_control,
         if(result!=Result::Ok)++command_overflow;
         if(cmd!=uint16_t(wire::Command::Heartbeat) && cmd!=uint16_t(wire::Command::Status))log(cmd,uint32_t(result));},
     [](void*){trip(FaultStop);}
-#if REHAB_BENCH
-    ,bench_handle,bench_connection_lost
-#endif
 };
 wire::Service service(engine,hooks);
 #endif
@@ -304,9 +293,6 @@ void publish() {
     }
     CRITICAL_SECTION(){published=engine.status();target=published.target;limits=l;}
 }
-#if REHAB_BENCH
-#include "bench_native.hpp"
-#endif
 void safety_main(void*) {
     uint32_t tick=xTaskGetTickCount(),last_temp=0,last_fault=0,last_stack=0;
     for(;;) {
@@ -401,9 +387,6 @@ void network_main(void*) {
 } // namespace
 
 void early_init() {
-#if REHAB_BENCH
-    bench_boot_defaults();
-#endif
     CoreDebug->DEMCR|=CoreDebug_DEMCR_TRCENA_Msk;DWT->CTRL|=DWT_CTRL_CYCCNTENA_Msk;
     const bool subscribed=board_access::stop_gpio().subscribe(true,true,[](void*) {
 #if defined(REHAB_V13)
@@ -420,14 +403,12 @@ void early_init() {
     axes[0].config_.startup_encoder_offset_calibration=false;
     axes[0].config_.startup_homing=false;
     axes[0].config_.startup_closed_loop_control=false;
-#if defined(REHAB_V13) && !REHAB_REAL_MOTOR
-    // 24 V locked-bench fallback for the custom board's zero default only.
-    // Not a production voltage rating: preserve every nonzero configured limit.
-    // board_init calls this after config loading and before ADC/PWM starts.
-    if(odrv.config_.dc_bus_overvoltage_trip_level==0.0f)
-        odrv.config_.dc_bus_overvoltage_trip_level=28.0f;
+    if(native_board_control) {
+#if REHAB_ENABLE_NETWORK
+        pending_network=drivers::NetworkConfig{{192,168,11,2},{0,0,0,0},{255,255,255,0},39400};
+        ++network_revision;
 #endif
-    if(!commissioning::may_energize)odrv.config_.enable_brake_resistor=false;
+    } else if(!commissioning::may_energize)odrv.config_.enable_brake_resistor=false;
     else {
         odrv.config_.dc_bus_undervoltage_trip_level=commissioning::bus_min_v;
         odrv.config_.dc_bus_overvoltage_trip_level=commissioning::bus_max_v;
@@ -456,12 +437,11 @@ void start() {
 }
 void fast_guard() {
     if(stop_asserted())physical_stop(false);
-#if REHAB_BENCH
-    bench_advance();
-    if(!bench_permit() && motors[0].is_armed_)motors[0].disarm();
-#else
-    if(latched || !commissioning::may_energize) {if(motors[0].is_armed_)motors[0].disarm();}
-#endif
+    if(native_board_control) {
+        if(motors[0].is_armed_ && !hardware_ready())trip(FaultPlatform,false);
+    } else if(latched || !commissioning::may_energize) {
+        if(motors[0].is_armed_)motors[0].disarm();
+    }
     if(owner_session && target.enable && (target.epoch!=owner_epoch || !limits.valid ||
         uint32_t(now_us()-target.created_us)>limits.target_us))trip(FaultTargetExpired,false);
 }
@@ -476,9 +456,6 @@ void control_hook() {
     f.idle=axis.current_state_==Axis::AXIS_STATE_IDLE;f.armed=axis.motor_.is_armed_;
     f.native_fault=odrv.any_error();f.stop=stop_asserted();
     feedback=f; // ISR is sole writer; task snapshots with PRIMASK held briefly.
-#if REHAB_BENCH
-    bench_control();
-#endif
     if(owner_session && target.enable) {
         const float length=(f.position_turns-limits.zero_turns)*limits.metres_per_encoder_turn;
         const float speed=f.velocity_turns_s*limits.metres_per_encoder_turn;
@@ -497,24 +474,11 @@ void control_hook() {
     max_hook_cycles=std::max(max_hook_cycles,uint32_t(DWT->CYCCNT-begin));
 }
 bool motor_may_arm() {
-#if REHAB_BENCH
-    return bench_permit();
-#endif
     if(!hardware_ready())return false;
     return !owner_session || (target.enable && target.epoch==owner_epoch && limits.valid &&
         uint32_t(now_us()-target.created_us)<=limits.target_us);
 }
 void post_controller_hook() {
-#if REHAB_BENCH
-    auto& bench_output=axes[0].controller_.torque_output_;
-    if(!bench_session.active() || bench_session.stage==3){bench_output=0.0f;return;}
-    if(bench_session.stage==4 || bench_session.stage==5) {
-        const auto actual=bench_output.present();
-        if(!actual.has_value() || !std::isfinite(*actual)){bench_fail(BenchReason::Numeric);bench_output=0.0f;return;}
-        bench_output=std::max(-0.12f,std::min(0.12f,*actual));
-    }
-    return;
-#endif
     if(!owner_session)return;
     auto& output=axes[0].controller_.torque_output_;
     const auto actual=output.present();
@@ -531,7 +495,10 @@ void post_controller_hook() {
     const bool same_sign=(*actual)*target.torque_nm>=0.0f;
     output=same_sign?std::copysign(std::min(std::fabs(*actual),bound),target.torque_nm):0.0f;
 }
-bool brake_may_arm() {return commissioning::may_energize;}
+// This is static permission to initialize/update the native brake timer, not
+// motor permission. A dynamic STOP/gate check here would suppress safe-duty
+// writes or prevent timer startup while STOP is asserted at power-on.
+bool brake_may_arm() {return native_board_control || commissioning::may_energize;}
 void native_clear_faults() {
     CRITICAL_SECTION(){
         if(!owner_session && quiescent_axis() && !stop_asserted()) {
@@ -541,10 +508,6 @@ void native_clear_faults() {
 }
 bool axis_request_allowed(uint32_t state) {
     if(state==Axis::AXIS_STATE_IDLE || state==Axis::AXIS_STATE_UNDEFINED)return true;
-#if REHAB_BENCH
-    return bench_session.permitted(HAL_GetTick()) && state==bench_session.target_state() &&
-        !latched && !stop_asserted() && board_access::gate_ready() && !odrv.any_error();
-#endif
     if(!motor_may_arm())return false;
     return !owner_session || state==Axis::AXIS_STATE_CLOSED_LOOP_CONTROL;
 }
@@ -577,9 +540,6 @@ void disconnected(unsigned port) {
     __atomic_add_fetch(&transport_generation[port],1,__ATOMIC_RELEASE);
 #endif
     __atomic_fetch_or(&disconnect_bits,1u<<port,__ATOMIC_RELEASE);
-#if REHAB_BENCH
-    if(bench_session.active() && bench_session.port==port)bench_fail(BenchReason::Disconnected);
-#endif
     }
     // The task will bind this event to the current session; heartbeat/target
     // deadlines remain enforced independently by the motor control hook.
@@ -610,7 +570,7 @@ void service_transports() {
             if(__atomic_load_n(&disconnect_bits,__ATOMIC_ACQUIRE)&(1u<<c.port))return;
             // STOP bypasses ordinary queue capacity/budget, but never the
             // Service's session, payload and replay validation.
-            if(frame.command==uint16_t(wire::Command::Stop) || frame.command==uint16_t(wire::Command::BenchStop)) {
+            if(frame.command==uint16_t(wire::Command::Stop)) {
                 service.handle(c.port,frame,response,now_us(),capture());
                 c.reply(c.port,c.generation,response);return;
             }
@@ -650,11 +610,7 @@ uint32_t diagnostic_word(unsigned index) {
             case 5:return published.config_valid;case 6:return published.force_valid;case 7:return published.sample_age_us;
             case 8:return native_rejected;case 9:return native_writers;
             case 10:
-#if REHAB_BENCH
-                return !bench_session.permitted(HAL_GetTick());
-#else
-                return !commissioning::may_energize;
-#endif
+                return native_board_control?!hardware_ready():!commissioning::may_energize;
             case 11:return REHAB_STAGE;case 12:return REHAB_ENABLE_HX711;case 13:return REHAB_ENABLE_NETWORK;
             case 14:return command_overflow;case 15:return rx_overflow;case 16:return tx_overflow;
             case 17:return max_hook_cycles;case 18:return max_service_cycles;case 19:return safety_stack_free;case 20:return network_stack_free;
@@ -706,7 +662,7 @@ uint32_t diagnostic_word(unsigned index) {
             case 73:return stop_asserted();
             // Expected path after external DELAY settles, NOT a measured mux output.
             case 74:return stop_asserted()?2:1; // 2=555, 1=MCU; unequal STOP/DELAY blocks both.
-            case 75:return commissioning::may_energize && odrv.config_.enable_brake_resistor;
+            case 75:return (native_board_control || commissioning::may_energize) && odrv.config_.enable_brake_resistor;
             case 76:return 1; // Hardware STOP brake survives software brake disable.
             case 77:return rehab_isr_max_cycles(REHAB_ISR_SPI1_DMA_TX);
             case 78:return rehab_isr_max_cycles(REHAB_ISR_SPI1_DMA_RX);
@@ -715,12 +671,6 @@ uint32_t diagnostic_word(unsigned index) {
             // Read-only DC sampling observer. No ADC register access in getters.
             case 94:case 95:case 96:case 97:
                 return rehab_board_phase_adc_word(index-94);
-            case 98:return REHAB_BENCH;
-#if REHAB_BENCH
-            case 99:return bench_session.active();case 100:return bench_session.stage;
-            case 101:return uint32_t(bench_session.state);case 102:return uint32_t(bench_session.reason);
-            case 103:return bench_session.epoch;
-#endif
 #if REHAB_ENABLE_NETWORK
             // Only read the network task's published snapshot here. No SPI in
             // Fibre getters or while interrupts are masked. Framed Diagnostics
@@ -764,9 +714,6 @@ float diagnostic_float(unsigned index) {
 
 namespace rehab {
 bool begin_native_write() {
-#if REHAB_BENCH
-    return false; // Exclusive bounded wire commands; no writable Fibre/CAN/ASCII bypass.
-#endif
     CRITICAL_SECTION() {
         if(platform::owner_session) {++platform::native_rejected;platform::last_native_rejection=uint32_t(Result::NotOwner);return false;}
         ++platform::native_writers;return true;
@@ -775,11 +722,7 @@ bool begin_native_write() {
 }
 void end_native_write() {CRITICAL_SECTION(){if(platform::native_writers)--platform::native_writers;}}
 bool native_input_allowed() {
-#if REHAB_BENCH
-    return false;
-#else
     return __atomic_load_n(&platform::owner_session,__ATOMIC_ACQUIRE)==0;
-#endif
 }
 bool native_stop_property(const void* object,const void* value,size_t length) {
     if(!native_input_allowed() && object==&axes[0].requested_state_ && length==sizeof(axes[0].requested_state_)) {

@@ -705,9 +705,54 @@ void long_virtual_run() {
 #endif // REHAB_ENABLE_APPLICATION
 }
 
+void retired_control_commands() {
+    Fixture f;
+    auto unknown=f.request(0,static_cast<Command>(kRetiredCommandFirst));
+    CHECK(result_of(f.exchange(0,unknown))==Result::BadSequence);
+    f.hello();
+    for(uint16_t cmd=kRetiredCommandFirst;cmd<=kRetiredCommandLast;++cmd) {
+        for(uint16_t length : {uint16_t(0),uint16_t(1),uint16_t(8),uint16_t(12),uint16_t(16),uint16_t(kPayload)}) {
+            auto request=f.request(0,static_cast<Command>(cmd));
+            request.length=length;
+            std::memset(request.payload,0xa5,length);
+            const auto before=f.log_count;
+            const auto response=f.exchange(0,request);
+            CHECK(result_of(response)==Result::Unsupported && response.length==4);
+            CHECK(f.log_count==before+1);
+            CHECK(equal_frame(f.exchange(0,request),response));
+            CHECK(f.log_count==before+1); // Cached Unsupported is not executed again.
+            CHECK(f.engine.status().session==0 && !f.engine.status().target.enable);
+            CHECK(f.acquire_count==0 && f.release_count==0 && f.clear_count==0 &&
+                  f.emergency_count==0 && f.network_count==0);
+            if(length) {
+                request.payload[0]^=1;
+                CHECK(result_of(f.exchange(0,request))==Result::BadSequence);
+            }
+        }
+    }
+    // Bad CRC cannot invoke even a retired command; a subsequent legal frame
+    // with the same sequence still passes framing and receives Unsupported.
+    auto request=f.request(0,static_cast<Command>(kRetiredCommandFirst));
+    uint8_t bytes[kMaxFrame];const size_t n=encode(request,bytes,sizeof(bytes));
+    CHECK(n>0);bytes[n-1]^=1;
+    const auto received=f.response_count,logged=f.log_count;
+    f.route=0;f.requests[0].consume(bytes,n,0,Fixture::receive_request,&f);
+    CHECK(f.response_count==received && f.log_count==logged && f.requests[0].bad_crc==1);
+    CHECK(result_of(f.exchange(0,request))==Result::Unsupported);
+    const auto old_session=f.sessions[0];
+    f.service.disconnect(0);
+    CHECK(result_of(f.exchange(0,f.request(0,static_cast<Command>(kRetiredCommandLast))))==Result::BadSequence);
+    f.hello();CHECK(f.sessions[0]!=old_session);
+    CHECK(f.command(static_cast<Command>(kRetiredCommandLast))==Result::Unsupported);
+    CHECK(f.command(Command::Status)==Result::Ok);
+    const auto diagnostics=f.send(0,Command::Diagnostics);
+    CHECK(result_of(diagnostics)==Result::Ok && diagnostics.length==4+63*4 && kDiagnosticWords==63);
+}
+
 int main(int argc, char** argv) {
     const bool long_run = argc > 1 && std::strcmp(argv[1], "--long") == 0;
     read_only_and_transport_guards();
+    retired_control_commands();
 #if REHAB_ENABLE_APPLICATION
     configuration_validation();
     calibration_and_staging();
