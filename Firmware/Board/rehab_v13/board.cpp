@@ -18,6 +18,7 @@
 #include <Rehab/platform/board_access.hpp>
 #include <Rehab/platform/isr_timing.h>
 #include <Rehab/platform/phase_adc_monitor.hpp>
+#include <Rehab/platform/calibration_capture.hpp>
 
 // this should technically be in task_timer.cpp but let's not make a one-line file
 bool TaskTimer::enabled = false;
@@ -282,6 +283,56 @@ void start_timers() {
 
 static rehab::platform::PhaseAdcMonitor phase_adc_monitor;
 
+// The control ISR is the sole recorder writer. Fibre only arms while idle,
+// or copies one word under a short interrupt guard. Never performs motor I/O.
+uint32_t rehab_board_capture_arm() {
+    CRITICAL_SECTION() {
+        if (axes[0].current_state_ != Axis::AXIS_STATE_IDLE ||
+            axes[0].requested_state_ != Axis::AXIS_STATE_UNDEFINED || motors[0].is_armed_) return 1;
+        rehab::capture::recorder.arm();
+        rehab::capture::active = false;
+        return 0;
+    }
+    return 1;
+}
+uint32_t rehab_board_capture_word(uint32_t index) {
+    CRITICAL_SECTION() { return rehab::capture::recorder.word(index); }
+    return 0;
+}
+static uint32_t capture_float(float value) {
+    uint32_t result; memcpy(&result, &value, sizeof(result)); return result;
+}
+static void capture_begin(uint32_t timestamp) {
+    using namespace rehab::capture;
+    active = recorder.word(1) == 1 && axes[0].current_state_ == Axis::AXIS_STATE_MOTOR_CALIBRATION;
+    if (!active) { recorder.finish(); return; }
+    pending = {};
+    auto& w = pending.words;
+    for (unsigned i = 8; i <= 18; ++i) w[i] = capture_float(NAN);
+    w[1] = timestamp;
+    w[3] = ((TIM1->BDTR & TIM_BDTR_MOE_Msk) ? 8u : 0u) | (motors[0].is_armed_ ? 16u : 0u);
+    w[4] = ADC2->JDR1; w[5] = ADC3->JDR1;
+    w[6] = ADC2->SR; w[7] = ADC3->SR;
+    w[12] = capture_float(vbus_voltage);
+    w[13] = capture_float(motors[0].DC_calib_.phA);
+    w[14] = capture_float(motors[0].DC_calib_.phB);
+    w[15] = capture_float(motors[0].DC_calib_.phC);
+    w[16] = capture_float(motors[0].phase_current_rev_gain_);
+    w[17] = capture_float(motors[0].effective_current_lim_ + motors[0].config_.current_lim_margin);
+    w[22] = TIM1->BDTR; w[24] = motors[0].armed_state_;
+}
+static void capture_end() {
+    using namespace rehab::capture;
+    if (!active) return;
+    auto& w = pending.words;
+    w[18] = capture_float(motors[0].I_bus_);
+    const uint64_t error = static_cast<uint64_t>(motors[0].error_);
+    w[19] = static_cast<uint32_t>(error); w[20] = static_cast<uint32_t>(error >> 32);
+    w[21] = static_cast<uint32_t>(odrv.error_); w[23] = TIM1->BDTR;
+    recorder.push(pending);
+    active = false;
+}
+
 uint32_t rehab_board_phase_adc_word(unsigned index) {
     CRITICAL_SECTION() {
         return phase_adc_monitor.word(index, HAL_GetTick());
@@ -302,6 +353,11 @@ static bool fetch_and_reset_adcs(std::optional<Iph_ABC_t>* current0, bool captur
 
     const uint32_t raw_b = ADC2->JDR1;
     const uint32_t raw_c = ADC3->JDR1;
+    if (!capture_dc && rehab::capture::active) {
+        rehab::capture::pending.words[4] = raw_b;
+        rehab::capture::pending.words[5] = raw_c;
+        rehab::capture::pending.words[12] = capture_float(vbus_voltage);
+    }
     const bool gate_ready = m0_gate_driver.is_ready();
     bool conversion_valid = false;
     if (gate_ready) {
@@ -310,6 +366,7 @@ static bool fetch_and_reset_adcs(std::optional<Iph_ABC_t>* current0, bool captur
         if (phB.has_value() && phC.has_value()) {
             conversion_valid = true;
             *current0 = {-*phB - *phC, *phB, *phC};
+            if (!capture_dc && rehab::capture::active) rehab::capture::pending.words[3] |= 1u;
         }
     }
 
@@ -448,6 +505,8 @@ void ControlLoop_IRQHandler(void) {
     // Ensure that all the ADCs are done
     std::optional<Iph_ABC_t> current0;
 
+    capture_begin(timestamp - TIM1_INIT_COUNT);
+
     if (!fetch_and_reset_adcs(&current0)) {
         motors[0].disarm_with_error(Motor::ERROR_BAD_TIMING);
     }
@@ -464,6 +523,15 @@ void ControlLoop_IRQHandler(void) {
         current0 = motors[0].DC_calib_;
     }
     motors[0].current_meas_cb(timestamp - TIM1_INIT_COUNT, current0);
+    if (rehab::capture::active && motors[0].current_meas_.has_value()) {
+        // Fallback if a native protection disarmed before the calibration
+        // callback: record corrected current, but leave model/output invalid.
+        auto& w = rehab::capture::pending.words;
+        const auto& i = *motors[0].current_meas_;
+        w[3] |= 2u;
+        w[8] = capture_float(i.phA);
+        w[9] = capture_float(one_by_sqrt3 * (i.phB - i.phC));
+    }
 
     odrv.control_loop_cb(timestamp);
 
@@ -489,6 +557,7 @@ void ControlLoop_IRQHandler(void) {
         }
         odrv.task_timers_armed_ = false;
         TaskTimer::enabled = false;
+        capture_end();
         return;
     }
 
@@ -512,6 +581,7 @@ void ControlLoop_IRQHandler(void) {
 
     odrv.task_timers_armed_ = odrv.task_timers_armed_ && !TaskTimer::enabled;
     TaskTimer::enabled = false;
+    capture_end();
 }
 
 extern PCD_HandleTypeDef hpcd_USB_OTG_FS; // defined in usbd_conf.c

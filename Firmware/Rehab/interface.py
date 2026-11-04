@@ -34,5 +34,10 @@ if a.board=='v13':
     adc_words = ['phase_adc_sequence','phase_adc_packed','phase_adc_age_ms','phase_adc_errors']
     attrs.update({n:{'type':'readonly uint32','c_getter':'get_'+n+'()'} for n in adc_words})
 intfs['RehabStatus']={'c_is_class':True,'attributes':attrs}
+if a.board=='v13':
+    intfs['RehabStatus']['functions'] = {
+        'cal_capture_arm': {'out': {'result': 'uint32'}},
+        'cal_capture_word': {'in': {'index': 'uint32'}, 'out': {'value': 'uint32'}},
+    }
 data['valuetypes']['ODrive.StreamProtocolType']['values']['Rehab']={'doc':'Exclusive framed rehabilitation protocol. No ASCII or stdout on this stream.'}
 pathlib.Path(a.output).write_text(yaml.safe_dump(data,sort_keys=False,allow_unicode=True),encoding='utf-8')

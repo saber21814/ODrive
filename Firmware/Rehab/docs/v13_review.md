@@ -302,3 +302,50 @@ V1.3 board only: encode assumed zero as DC_calib_ before native offset subtracti
 Independent reviewer idle_current_review approved startup two-sample behavior, MOE transitions, real overcurrent protection and DC sample isolation. Host tests execute extracted production compensation/protection logic; invalid DC-fetch paths are source-reviewed, not a full HAL simulation. Hardware calibration/regeneration remains unverified.
 
 Only reviewed board hash updated: 207acffec3f0b23eec5a37f2769886eaf8c3e116d22ab9e40ba6bfa8c245b558 -> eed88c9c0aade0099d54b521e4b130a0bdfb23154d976d0a152fe7fccd8d8d9e. Historical archives and all other reviewed hashes preserved.
+
+
+## 2026-11-04: Temporary calibration cycle capture
+
+Independent review: capture_review APPROVED. Native MotorControl source bytes unchanged. V1.3 compiles an insertion-only generated observation copy; stripping five marked blocks exactly restores native motor.cpp. No return/status, protection predicate, PWM command or calibration parameter changed. Eight generator/control-law equivalence tests and recorder tests cover freeze, ring wrap, invalid data, first event and native error fallback. V1.2 schema unchanged; V1.3 only appends two Fibre functions, framed protocol unchanged. No hardware run or flash performed. Actual real-time margin remains a bench check.
+
+Explicit reviewed manifest delta (no baseline refresh):
+```json
+{
+  "Firmware/Board/rehab_v13/board.cpp": {
+    "before": "eed88c9c0aade0099d54b521e4b130a0bdfb23154d976d0a152fe7fccd8d8d9e",
+    "after": "545fd79f18180be6de2763a014c86813387510b6b0aeb1b1da0c21f72294b15b"
+  },
+  "Firmware/Rehab/platform/calibration_capture.hpp": {
+    "before": null,
+    "after": "513b990951bf53d9d0cdcb27a0fe29c0f01034ee68fd3419f301ea3192943178"
+  },
+  "Firmware/Rehab/platform/calibration_capture.cpp": {
+    "before": null,
+    "after": "ff1dda174c916662f55c08225fbaaf0a5613136a947d075cfdbad67b75c590fb"
+  },
+  "Firmware/Rehab/scripts/instrument_calibration.py": {
+    "before": null,
+    "after": "6fbc5dbf4fe48cf544f618c19516efd6da2087efda530c11da9aa28612d205f4"
+  },
+  "Firmware/Tupfile.lua": {
+    "before": "b833b852b626b22b59631f3421a7c51c62f4ecd4dea1d0fba3a92f42c597cef2",
+    "after": "d2b9d2df7241b6c72df8fa75e3065fd045a3280c5f996facd574698f88943279"
+  },
+  "Firmware/Rehab/interface.py": {
+    "before": "aa1601d399af9d4365bdcd259cc990af515db8c6c95f8680bb247bfa06c605d4",
+    "after": "5cfe29c2b8b35819ea8773b046fd5be6e52224ab9199ce0165ba7e74d92caec0"
+  },
+  "Firmware/Rehab/platform/diagnostics.hpp": {
+    "before": "0a47621ac20a3213bddd0c4e40a0e55f9083fd2b6ab092b713abd8088c10d2ec",
+    "after": "b8eb5a8dc688724d7faf5c1942112d42bfafe31f701456fa11bf209e1e4f1335"
+  },
+  "Firmware/Rehab/scripts/build.py": {
+    "before": "98ab4292a62c73c089ac69eca44a3ff952acfb587d1bd202d5023bc468f87eb3",
+    "after": "90f6886bce2fea975947a2b9292a21d3e3e7fee9f7069701f255a63f7c58cf1e"
+  },
+  "Firmware/Rehab/scripts/read_calibration_capture.py": {
+    "before": null,
+    "after": "f25e1b5a41697f468e6d6481fd4db40003d970526590b50a95b49d81ff66236d"
+  }
+}
+```

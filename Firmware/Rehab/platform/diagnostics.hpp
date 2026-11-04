@@ -1,6 +1,10 @@
 #pragma once
 #include <autogen/interfaces.hpp>
 #include "runtime.hpp"
+#if defined(REHAB_V13)
+uint32_t rehab_board_capture_arm();
+uint32_t rehab_board_capture_word(uint32_t index);
+#endif
 namespace rehab { namespace platform {
 class Diagnostics : public RehabStatusIntf {
 public:
@@ -68,6 +72,8 @@ public:
     uint32_t get_isr_spi_rx_count() const { return diagnostic_word(61); }
     uint32_t get_isr_stop_count() const { return diagnostic_word(62); }
 #if defined(REHAB_V13)
+    uint32_t cal_capture_arm() { return rehab_board_capture_arm(); }
+    uint32_t cal_capture_word(uint32_t index) { return rehab_board_capture_word(index); }
     uint32_t get_board_revision() const { return diagnostic_word(63); }
     uint32_t get_network_spi_bus() const { return diagnostic_word(64); }
     uint32_t get_native_spi_bus() const { return diagnostic_word(65); }

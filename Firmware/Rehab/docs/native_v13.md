@@ -40,3 +40,69 @@ dump_errors(dev0)
 原生短时开环可使用LOCKIN_SPIN公开配置与状态请求；它仍有原生校准、方向和硬件就绪前提。每次运行采用单独明确的命令，并以IDLE退出。USB可通过`dev0.axis0.requested_state = 1`请求停止。网络基础查询不会持有电机控制权；TCP断开不代表原生运动看门狗，若需要断连停机应使用原生看门狗并按其控制源维护。
 
 物理STOP、DRV恢复、ADC映射、双SPI隔离等板级功能保留。保留诊断不表示已完成实机急停、采样准确度、制动回生或行程保护验收。无编码器和限位的推杆不能自动判断行程端点。
+
+
+## Temporary V1.3 calibration capture (2026-11-04)
+
+This observer is OFF after boot. `dev0.rehab.cal_capture_arm()` returns 0 only
+while axis0 is IDLE, no state request is queued and motor PWM is not armed.
+It only prepares RAM recording; it never clears faults or starts calibration.
+Arm explicitly before ONE independently configured native calibration attempt.
+Do not rerun calibration automatically if no capture is available.
+
+`cal_capture_word(index)` reads metadata or frozen records only. Clear-errors
+and motor disarm do not erase the capture. Explicit re-arm replaces it; power
+loss erases RAM. No persistence or network command IDs were added.
+
+The first finite pre-brake model Ibus < -0.01 A freezes the most recent 64
+samples, including that sample. Threshold is diagnostic only; no protection is
+changed. If a native error arrives first, reason 2 freezes it. Calibration end
+without either event freezes reason 3. Thus current-limit faults can be captured
+without weakening current protection to force a negative-current event.
+
+Run the read-only exporter after axis0 returns to IDLE:
+
+```python
+import runpy
+_ = runpy.run_path(
+    r"D:\00-ODrive-text\ODrive-fw-0.5.6\Firmware\Rehab\scripts\read_calibration_capture.py",
+    init_globals={"dev0": dev0}, run_name="__main__")
+```
+
+Files go to `Firmware/build/rehab/calibration_captures/` as JSON (raw words
+included) and CSV. Do not interpret absent/NaN model values as zero.
+
+Word metadata 0..8: version=1, state(0 disabled/1 recording/2 frozen), generation,
+count, reason(1 negative/2 native error/3 end), trigger row (UINT_MAX for end),
+capacity=64, record length=28, threshold float bits. Data starts at word 16,
+chronological rows of 28 words; floating fields 8..18 are IEEE754 float32.
+
+Record columns: sequence, sample timestamp, phase(0 unknown/1 resistance/2
+inductance), flags, ADC2 JDR1, ADC3 JDR1, ADC2 SR, ADC3 SR, Ialpha, Ibeta,
+test_voltage, estimated_ibus, Vbus, DC_A, DC_B, DC_C, inverse_gain, current_trip,
+runtime_ibus_after_PWM_callback, motor_error_low, motor_error_high, system_error,
+BDTR_at_sample, BDTR_after, armed_state_at_sample, output_timestamp, reserved,
+reserved. Flags: 1 raw conversion valid; 2 corrected current valid; 4 model
+estimate valid; 8 MOE at sample; 16 software armed at sample; 32 model output
+produced. All values correspond to one control ISR processing cycle; sample and
+output timestamps deliberately differ because the native loop schedules future
+PWM. Invalid raw samples must not be interpreted as valid ADC measurements.
+
+Interpretation limits:
+- Test voltage is the model COMMAND for the output timestamp, not measured
+  terminal voltage. Output-valid does not prove SVM/PWM was successfully applied.
+- In inductance calibration native Ibus is fixed at 0; this is not measured
+  absence of regeneration. The output voltage changes sign after measurement.
+- A current-limit fault can run before the model callback. That row retains
+  corrected currents/raw ADC but marks unavailable model values invalid/NaN.
+- Samples retain the pre-compensation DC values before independent DC sampling.
+- This can distinguish sustained sign inconsistency from isolated sample spikes;
+  it cannot independently prove physical phase-current direction.
+- Compare existing `rehab.isr_control_max_cycles` before/after an armed capture.
+  Host tests and the ARM build do not certify real-target ISR deadline margin.
+
+MotorControl source is unmodified. Only V1.3 builds generate an insertion-only
+motor observation copy. Removing the marked observer blocks exactly restores
+the original source bytes. Removing this temporary feature means removing the
+V1.3 build selection, board hooks and appended capture APIs, not editing native
+FOC or calibration algorithms.

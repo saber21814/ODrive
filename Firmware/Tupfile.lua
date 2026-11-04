@@ -401,6 +401,15 @@ if boardversion == 'rehab-v1.2' or boardversion == 'rehab-v1.3' then
             odrive_firmware_pkg.code_files[i] = 'Rehab/drivers/spi_arbiter.cpp'
         end
     end
+    if boardversion == 'rehab-v1.3' then
+        -- V1.3-only generated observation copy; native motor.cpp stays untouched.
+        for i, name in ipairs(odrive_firmware_pkg.code_files) do
+            if name == 'MotorControl/motor.cpp' then
+                odrive_firmware_pkg.code_files[i] = 'autogen/motor_v13_capture.cpp'
+            end
+        end
+        table.insert(odrive_firmware_pkg.code_files, 'Rehab/platform/calibration_capture.cpp')
+    end
     local extra_sources = {'Rehab/core/engine.cpp', 'Rehab/protocol/frame.cpp',
         'Rehab/protocol/config_fields.cpp', 'Rehab/protocol/service.cpp',
         'Rehab/platform/runtime.cpp', 'Rehab/platform/stream.cpp', 'Rehab/platform/isr_timing.cpp'}
@@ -452,6 +461,11 @@ end
 
 python_command = find_python3()
 print('Using python command "'..python_command..'"')
+if boardversion == 'rehab-v1.3' then
+    tup.frule{inputs={'MotorControl/motor.cpp', 'Rehab/scripts/instrument_calibration.py'},
+        command=python_command..' Rehab/scripts/instrument_calibration.py --input MotorControl/motor.cpp --output %o',
+        outputs='autogen/motor_v13_capture.cpp'}
+end
 
 -- TODO: use CI to verify that on PRs the enums.py file is consistent with the YAML.
 -- Note: we currently check this file into source control for two reasons:

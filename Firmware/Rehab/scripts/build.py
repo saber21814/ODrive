@@ -37,6 +37,7 @@ def source_digest():
     for directory in ('Board', 'Rehab', 'MotorControl', 'Drivers', 'communication', 'fibre-cpp'):
         paths += [p for p in (ROOT/directory).rglob('*') if p.is_file() and p.suffix in ('.c','.cpp','.h','.hpp','.j2','.lua','.ld','.s','.yaml')]
     paths += [ROOT/'Tupfile.lua', ROOT/'odrive-interface.yaml', ROOT/'Rehab/interface.py']
+    paths += [ROOT/'Rehab/scripts/instrument_calibration.py']
     for path in sorted(set(paths)):
         digest.update(path.relative_to(ROOT).as_posix().encode());digest.update(path.read_bytes())
     return digest.hexdigest()
