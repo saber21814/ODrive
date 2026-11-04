@@ -349,3 +349,10 @@ Explicit reviewed manifest delta (no baseline refresh):
   }
 }
 ```
+
+
+## 2026-11-04: Native-fault-only capture freeze
+
+User requested removal of diagnostic negative-current freeze. Independent capture_review APPROVED; only Motor/System error words now trigger reason 2, with existing end snapshot reason 3 retained. Header word 8 and legacy reason 1 decoding kept compatible. Tests passed: recorder regression (negative history continues; model-invalid current-limit event retains ADC/current), eight instrument equivalence tests, eighteen FOCV1.9 offline tests. No hardware access, firmware build or flash. No native algorithm/protection edits. Only these two reviewed hashes updated; history unchanged:
+- Rehab/platform/calibration_capture.cpp: c33ef3e8eb84a6637cad28848ba6572e4875b408ede53f90318c0b16bce00564
+- Rehab/platform/calibration_capture.hpp: 480151db5896ff10de25017f44b8afb60b2a79a46d5409bc3339534e5b46e648

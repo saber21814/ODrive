@@ -54,11 +54,11 @@ Do not rerun calibration automatically if no capture is available.
 and motor disarm do not erase the capture. Explicit re-arm replaces it; power
 loss erases RAM. No persistence or network command IDs were added.
 
-The first finite pre-brake model Ibus < -0.01 A freezes the most recent 64
-samples, including that sample. Threshold is diagnostic only; no protection is
-changed. If a native error arrives first, reason 2 freezes it. Calibration end
-without either event freezes reason 3. Thus current-limit faults can be captured
-without weakening current protection to force a negative-current event.
+Only a nonzero native Motor/System error freezes the most recent 64 samples,
+including the fault sample (reason 2). Negative estimated current alone no longer
+freezes recording, even below -0.01 A. Calibration end without a fault retains
+the existing reason 3 snapshot. Native protection logic is unchanged; current-
+limit faults can be captured even when protection precedes model output.
 
 Run the read-only exporter after axis0 returns to IDLE:
 
@@ -73,8 +73,9 @@ Files go to `Firmware/build/rehab/calibration_captures/` as JSON (raw words
 included) and CSV. Do not interpret absent/NaN model values as zero.
 
 Word metadata 0..8: version=1, state(0 disabled/1 recording/2 frozen), generation,
-count, reason(1 negative/2 native error/3 end), trigger row (UINT_MAX for end),
-capacity=64, record length=28, threshold float bits. Data starts at word 16,
+count, reason(1 legacy negative, no longer emitted/2 native error/3 end), trigger row (UINT_MAX for end),
+capacity=64, record length=28, legacy threshold float bits (unused by trigger).
+The layout and old-capture reader remain compatible. Data starts at word 16,
 chronological rows of 28 words; floating fields 8..18 are IEEE754 float32.
 
 Record columns: sequence, sample timestamp, phase(0 unknown/1 resistance/2

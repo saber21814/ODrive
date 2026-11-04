@@ -1,5 +1,4 @@
 #include "calibration_capture.hpp"
-#include <cmath>
 #include <cstring>
 #include <limits>
 
@@ -35,10 +34,7 @@ void Recorder::push(Record sample) {
     samples_[next_] = sample;
     next_ = (next_ + 1) % kCapacity;
     if (count_ < kCapacity) ++count_;
-    const float bus = word_float(sample.words[11]);
-    if ((sample.words[3] & ModelValid) && std::isfinite(bus) && bus < kNegativeThreshold)
-        reason_ = 1;
-    else if (sample.words[19] || sample.words[20] || sample.words[21])
+    if (sample.words[19] || sample.words[20] || sample.words[21])
         reason_ = 2;
     if (reason_) state_ = 2;
 }

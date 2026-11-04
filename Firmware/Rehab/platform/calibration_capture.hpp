@@ -5,7 +5,7 @@ namespace rehab { namespace capture {
 constexpr unsigned kRecordWords = 28;
 constexpr unsigned kCapacity = 64;
 constexpr unsigned kDataOffset = 16;
-constexpr float kNegativeThreshold = -0.01f;
+constexpr float kNegativeThreshold = -0.01f; // Legacy header word 8; not a trigger.
 enum Flags : uint32_t {
     RawValid = 1, CurrentValid = 2, ModelValid = 4,
     PwmAtSample = 8, ArmedAtSample = 16, OutputValid = 32
@@ -34,7 +34,7 @@ private:
     uint32_t count_ = 0;
     uint32_t next_ = 0;
     uint32_t sequence_ = 0;
-    uint32_t reason_ = 0; // 1 negative estimate, 2 protection error, 3 end
+    uint32_t reason_ = 0; // 1 legacy (not emitted), 2 protection error, 3 end
 };
 extern Recorder recorder;
 extern Record pending;
