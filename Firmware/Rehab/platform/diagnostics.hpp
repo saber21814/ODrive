@@ -87,6 +87,29 @@ public:
     uint32_t get_isr_spi1_tx_count() const { return diagnostic_word(79); }
     uint32_t get_isr_spi1_rx_count() const { return diagnostic_word(80); }
     float get_aux_temperature_c() const { return diagnostic_float(10); }
+    uint32_t get_network_snapshot_sequence() const { return diagnostic_word(81); }
+    uint32_t get_network_failed_state() const { return diagnostic_word(82); }
+    uint32_t get_network_last_command() const { return diagnostic_word(83); }
+    uint32_t get_network_snapshot_valid() const { return diagnostic_word(84); }
+    uint32_t get_network_sn_mode() const { return diagnostic_word(85); }
+    uint32_t get_network_sn_ctrl() const { return diagnostic_word(86); }
+    uint32_t get_network_sn_int() const { return diagnostic_word(87); }
+    uint32_t get_network_sn_sta() const { return diagnostic_word(88); }
+    uint32_t get_network_sn_port() const { return diagnostic_word(89); }
+    uint32_t get_network_phy_cfg() const { return diagnostic_word(90); }
+    uint32_t get_network_mode_reg() const { return diagnostic_word(91); }
+    uint32_t get_network_chip_config() const { return diagnostic_word(92); }
+    uint32_t get_network_reg_page() const { return diagnostic_word(93); }
+    uint32_t get_phase_adc_sequence() const { return diagnostic_word(94); }
+    uint32_t get_phase_adc_packed() const { return diagnostic_word(95); }
+    uint32_t get_phase_adc_age_ms() const { return diagnostic_word(96); }
+    uint32_t get_phase_adc_errors() const { return diagnostic_word(97); }
+    uint32_t get_bench_enabled() const { return diagnostic_word(98); }
+    uint32_t get_bench_active() const { return diagnostic_word(99); }
+    uint32_t get_bench_stage() const { return diagnostic_word(100); }
+    uint32_t get_bench_state() const { return diagnostic_word(101); }
+    uint32_t get_bench_reason() const { return diagnostic_word(102); }
+    uint32_t get_bench_epoch() const { return diagnostic_word(103); }
 #endif
     float get_length_m() const { return diagnostic_float(0); }
     float get_speed_m_s() const { return diagnostic_float(1); }

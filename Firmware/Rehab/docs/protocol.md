@@ -221,3 +221,36 @@ CH394 network_state对应驱动枚举0 Disabled、1 ResetLow、2 ResetWait、3 I
 5 OpenSocket、6 WaitCommand、7 WaitOpen、8 Monitor、9 Backoff；last_error：0无、1配置、2SPI、
 3寄存器回读、4命令超时、5Socket超时、6IP冲突、7计数异常。
 PHY就绪、TCP连接、HELLO会话和训练控制权是不同状态，不能互相代替。
+
+### V1.3 CH394 命令超时快照（仅追加 Fibre 属性）
+
+`network_snapshot_sequence` 为0表示本次网络配置后尚无命令超时快照，为1表示首次采集已完成（可能仅部分有效）。快照保留至下次网络init；不随正常重试或deinit清除。它不是跨配置单调递增的计数器。
+
+`network_failed_state` 与原state枚举一致；`network_last_command` 是最后成功写入芯片的命令。`network_snapshot_valid` 按位表示读取有效：0x01=sn_mode/sn_ctrl/sn_int/sn_sta/sn_port，0x02=mode_reg，0x04=phy_cfg，0x08=chip_config，0x10=reg_page；全部有效为0x1f。字段统一带 `network_` 前缀。无效字段的0不表示实际寄存器为0。
+
+读取的是超时后、复位前的真实寄存器，不是预期配置。5次传输依次执行，不是同一时刻的硬件快照；getter仅返回网络任务发布副本。首次超时复位前增加有限SPI采集延迟。原命令号、帧格式、63字Diagnostics及原Fibre属性均保留。新镜像的对象布局与SRAM地址可能变化，不能复用旧固定地址OpenOCD采样脚本。
+
+2026-11-03 临时软件对照：仅 V1.3 且 `REHAB_REAL_MOTOR=0` 时，OPEN 命令清零等待上限从100ms延长到2000ms；仍为逐次poll，不是阻塞延时。WaitOpen状态等待、LISTEN及其他命令仍为100ms，复位低电平回退仍为250ms。因此OPEN一直不完成时重试周期会增长，首次快照也会推迟。诊断完成后应恢复100ms，不能将此改动作为根因修复或电机准入依据。
+
+后续PHY先行对照：仅V1.3且`REHAB_REAL_MOTOR=0`在芯片识别后、配置前进入新增状态10 `WaitLink`。每次poll读取PHY_CFG并发布link，检测到LINKS=1后才进入原配置流程；最多等待10000ms，仍无链路时以新增错误8 `LinkTimeout`进入原复位回退，不生成OPEN超时快照。SPI失败仍报错误2。原状态0..9、错误0..7、帧格式与接口属性保持不变；真实电机标志路径及V1.2不等待此状态。保留上一版2秒OPEN等待，以单独比较PHY先行的影响。参考例程的等待顺序是实验依据，不是已经确认的芯片必需条件；没有链路时不能用此镜像验收离线Socket初始化。
+
+
+### V1.3 DC ADC read-only observer
+
+Four Fibre uint32 properties are appended after all 105 prior properties: `phase_adc_sequence`, `phase_adc_packed`, `phase_adc_age_ms`, `phase_adc_errors` (internal diagnostic indices 94..97). Framed Diagnostics still returns the result word plus 63 diagnostic words. V1.2 is unchanged.
+
+The observer publishes only the second/DC-calibration ADC acquisition, before the native DC filter. It does not report the first-phase idle zero substitute or calibrated motor current. `packed` bits 0..11 are ADC2/JDR1 (phase B, PC0), 12..23 ADC3/JDR1 (phase C, PC1); bit 24 means all ADC completion checks passed, bit 25 the driver was ready, bit 26 both native conversions returned values with the driver ready, bit 27 PWM MOE was set, bit 31 an acquisition attempt was recorded. Flags describe capture time, not the later getter time. Reserved bits are zero.
+
+An incomplete DC fetch, DC wait timeout or out-of-12-bit sample increments errors and publishes only bit 31, clearing old raw/valid flags. Sequence counts attempts, including failures, modulo 2^32. Age is milliseconds since the last attempt, with unsigned tick subtraction; before any attempt it is UINT32_MAX. If sampling stops, age increases. Readers must check freshness and completion/driver/conversion flags; a recent failed attempt is not valid data. Neither zero errors nor valid conversions qualifies current polarity, absolute accuracy or safe motor operation.
+
+The packed B/C pair and capture flags are one atomic word. Separate Fibre reads of sequence, packed data, age and errors are not a multi-property atomic snapshot and may describe adjacent samples. The board getter masks interrupts only for bounded RAM/tick reads; it does not access ADC registers, SPI, or alter control. Existing control IRQ timing diagnostics remain available; physical timing validation is still pending.
+
+### Dedicated V1.3 bench image (append-only commands)
+
+Commands22Start,23Feed,24Stop,25Status,26Clear use existing negotiated sessions, sequence/replay and CRC rules. Full and other profiles have no bench hook and return Unsupported. Legacy Start for stages1..5 is eight bytes (uint32 stage, float32 argument); all other commands have empty payload. Stage1 uses argument0 for4A or explicit0.1..4A; stage2 retains0/default4A or1..4A; stage3 requires0; stage4 finite velocity abs<=.3turn/s; stage5 relative position abs<=.5turn. Stage1 also accepts twelve bytes `<Iff>` (stage,current_A,max_voltage_V), with explicit finite0.1..3V; its eight-byte form retains3V. This voltage is used by native resistance AND inductance measurement. No command chains phases.
+
+Stage6 short electrical-angle open loop requires exactly sixteen bytes `<IffI>`: stage6, nonzero finite signed electrical_rad_s (abs<=20), finite current_A (0.1..1.5), duration_ms (200..5000). It requires this boot's successful native motor calibration, not encoder calibration. Duration includes pending entry and current ramp; expiry without entering/arming is failure. Encoder position/speed fields are not physical measurements in this phase; clients must label them NOT_MEASURED. Current command limits are not the unchanged native6A trip envelope. Existing stage/status meanings remain unchanged; the argument field for stage6 is commanded electrical_rad_s, not mechanical speed.
+
+Every successful bench command returns192bytes: result uint32 +35uint32 +12float32, version1. Field names/order are explicit in Rehab/scripts/bench.py WORDS/FLOATS; errors may contain only result. Existing Status and Diagnostics63 layout is unchanged. Six read-only Fibre properties append after the prior109: bench_enabled/active/stage/state/reason/epoch (indices98..103). In bench, hardware_locked reflects absence of an unexpired lease; production commissioning remains unverified.
+
+Lease binds to transport and nonce. Replayed duplicates never execute or extend the deadline. Successful Hello replacement and owning transport disconnect revoke motion; observer Stop still requires session/replay validation. BenchStop bypasses ordinary queue budget like Stop. Clear is explicit, idle only and never resumes. All existing stale-command/fault boundaries remain. Heartbeat500ms cannot extend absolute8/15/5/10/10s durations for stages1..5 or the explicit200..5000ms stage6 duration. Bench uses NVM CRC0x13B1, isolated from full0x1301. See bench.md for instructions, bounds and unverified physical conditions.

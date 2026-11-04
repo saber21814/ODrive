@@ -22,6 +22,11 @@ uint32_t mock_cycle_step = 1;
 static uint32_t now_ms = 0;
 static unsigned checks = 0, starts = 0, reinitializations = 0, deinitializations = 0;
 static bool fail_start = false, auto_complete = false, network_mode = false, command_stuck = false;
+#if defined(REHAB_V13)
+static bool open_status_stuck=false, fail_snapshot_socket_read=false;
+static uint8_t stuck_command=0;
+static unsigned snapshot_socket_reads=0, network_writes=0;
+#endif
 static SPI_HandleTypeDef* pending_spis[2]{};
 static unsigned bus_reinitializations[2]{}, bus_deinitializations[2]{};
 static Stm32SpiArbiter* launch_race = nullptr;
@@ -62,6 +67,9 @@ static void network_transfer(uint8_t* tx, uint8_t* rx, uint16_t size) {
     const uint16_t address = read_be16(tx);
     const uint8_t block = tx[2] & 0xf8u, sock = block >> 5;
     const bool write = tx[2] & 4;
+#if defined(REHAB_V13)
+    if (write) ++network_writes;
+#endif
     uint8_t* base = nullptr;
     size_t capacity = 0;
     if (!(block & 0x18)) { base = common_regs; capacity = sizeof(common_regs); }
@@ -76,10 +84,18 @@ static void network_transfer(uint8_t* tx, uint8_t* rx, uint16_t size) {
             else base[offset] = tx[i];
         } else rx[i] = base[offset];
     }
-    if (write && block == 8 && address == 1 && !command_stuck) {
+    if (write && block == 8 && address == 1 && !command_stuck
+#if defined(REHAB_V13)
+        && tx[3] != stuck_command
+#endif
+    ) {
         const uint8_t cmd = tx[3];
         socket_regs[0][1] = 0;
-        if (cmd == 1) socket_regs[0][3] = 0x13;
+        if (cmd == 1
+#if defined(REHAB_V13)
+            && !open_status_stuck
+#endif
+        ) socket_regs[0][3] = 0x13;
         if (cmd == 2) socket_regs[0][3] = 0x14;
         if (cmd == 0x10) socket_regs[0][3] = 0;
         if (cmd == 0x20) socket_regs[0][2] |= 0x10;
@@ -94,6 +110,12 @@ static void network_transfer(uint8_t* tx, uint8_t* rx, uint16_t size) {
 HAL_StatusTypeDef HAL_SPI_TransmitReceive_DMA(SPI_HandleTypeDef* spi, uint8_t* tx, uint8_t* rx, uint16_t length) {
     CHECK(!mock_primask); // motor interrupts must remain enabled during launch
     ++starts;
+#if defined(REHAB_V13)
+    if (network_mode && tx[0]==0 && tx[1]==0 && tx[2]==8 && length==9) {
+        ++snapshot_socket_reads;
+        if (fail_snapshot_socket_read) { fail_snapshot_socket_read=false; return HAL_ERROR; }
+    }
+#endif
     if (fail_start) { fail_start = false; return HAL_ERROR; }
     last_dma_bytes = length * (spi->Init.DataSize == SPI_DATASIZE_16BIT ? 2u : 1u);
     last_dma_tx = tx;
@@ -121,6 +143,10 @@ struct Fixture {
         for (unsigned i = 0; i < 2; ++i) bus_reinitializations[i] = bus_deinitializations[i] = 0;
         mock_cycle_step = 8; mock_dwt_running = true; mock_gpio_bsrr_hook = nullptr;
         fail_start = auto_complete = network_mode = command_stuck = false;
+#if defined(REHAB_V13)
+        open_status_stuck=fail_snapshot_socket_read=false;stuck_command=0;
+        snapshot_socket_reads=network_writes=0;
+#endif
         launch_race = nullptr; pending_spis[0] = pending_spis[1] = nullptr; start_order.clear();
         completion_commit_race = nullptr; CriticalSectionContext::before_enter = nullptr;
         tx.Instance = DMA1_Stream7; rx.Instance = DMA1_Stream0;
@@ -557,10 +583,166 @@ static void test_network() {
     write_be16(socket_regs[0] + 0x26,5000); advance(chip,8);
     CHECK(chip.status().state == Ch394::State::Backoff && chip.status().last_error == Ch394::Error::BadCount);
     chip.deinit(); CHECK(chip.status().state == Ch394::State::Disabled);
-    CHECK(chip.init(config)); command_stuck = true; advance(chip,260);
+    CHECK(chip.init(config)); command_stuck = true;
+#if defined(REHAB_V13)
+    advance(chip,2200);
+#else
+    advance(chip,260);
+#endif
     CHECK(chip.status().last_error == Ch394::Error::CommandTimeout);
 }
+#if defined(REHAB_V13)
+static void prepare_network_snapshot() {
+    network_mode=auto_complete=true;
+    std::memset(common_regs,0,sizeof(common_regs));
+    std::memset(socket_regs,0,sizeof(socket_regs));
+    common_regs[0x39]=6;common_regs[0x2e]=0xb9;
+}
+static void wait_snapshot(rehab::drivers::Ch394& chip) {
+    for(unsigned i=0;i<2500 && !chip.status().timeout.sequence;++i)advance(chip,1);
+    CHECK(chip.status().timeout.sequence==1);
+    CHECK(chip.status().last_error==rehab::drivers::Ch394::Error::CommandTimeout);
+    CHECK(chip.status().state==rehab::drivers::Ch394::State::Backoff);
+}
+static void test_network_wait_link() {
+    using namespace rehab::drivers;
+    const NetworkConfig config{{192,168,77,2},{0,0,0,0},{255,255,255,0},39400};
+    {
+        Fixture f;prepare_network_snapshot();common_regs[0x2e]=0xb8;
+        Ch394 chip{f.arbiter};CHECK(chip.init(config));
+        advance(chip,120);
+        CHECK(chip.status().state==Ch394::State::WaitLink && network_writes==0);
+        CHECK(!chip.connected() && !chip.status().link && !chip.status().errors);
+        advance(chip,2000);
+        CHECK(chip.status().state==Ch394::State::WaitLink && network_writes==0);
+        common_regs[0x2e]=0xbf;advance(chip,100);
+        CHECK(chip.status().state==Ch394::State::Monitor && chip.status().link);
+        CHECK(socket_regs[0][3]==0x14 && !chip.status().errors);
+    }
+    for(bool wrap : {false,true}) {
+        Fixture f;prepare_network_snapshot();common_regs[0x2e]=0xb8;
+        Ch394 chip{f.arbiter};CHECK(chip.init(config));
+        for(unsigned i=0;i<100 && chip.status().state!=Ch394::State::Identify;++i)advance(chip,1);
+        CHECK(chip.status().state==Ch394::State::Identify);
+        if(wrap)now_ms=0xfffffff0u;
+        const uint32_t entered_ms=now_ms;chip.poll(now_ms);
+        CHECK(chip.status().state==Ch394::State::WaitLink);
+        now_ms=entered_ms+9999u;chip.poll(now_ms);
+        CHECK(chip.status().state==Ch394::State::WaitLink && network_writes==0);
+        now_ms=entered_ms+10000u;chip.poll(now_ms);
+        CHECK(chip.status().state==Ch394::State::Backoff);
+        CHECK(chip.status().last_error==Ch394::Error::LinkTimeout);
+        CHECK(!chip.status().timeout.sequence && !chip.connected() && !chip.status().link);
+    }
+    {
+        Fixture f;prepare_network_snapshot();common_regs[0x2e]=0xb8;
+        Ch394 chip{f.arbiter};CHECK(chip.init(config));advance(chip,120);
+        CHECK(chip.status().state==Ch394::State::WaitLink);
+        fail_start=true;advance(chip,1);
+        CHECK(chip.status().last_error==Ch394::Error::Spi && chip.status().state==Ch394::State::Backoff);
+        CHECK(!chip.status().timeout.sequence && network_writes==0);
+        CHECK(chip.init(config));advance(chip,120);chip.deinit();
+        advance(chip,11000);CHECK(chip.status().state==Ch394::State::Disabled && network_writes==0);
+    }
+}
+static void test_network_timeout_snapshot() {
+    using namespace rehab::drivers;
+    const NetworkConfig config{{192,168,77,2},{0,0,0,0},{255,255,255,0},39400};
+    // Both V1.3 motor-flag combinations use the same delayed OPEN policy.
+    for (bool wrap : {false, true}) {
+        Fixture f;prepare_network_snapshot();command_stuck=true;
+        Ch394 chip{f.arbiter};CHECK(chip.init(config));
+        for(unsigned i=0;i<150 && chip.status().state!=Ch394::State::OpenSocket;++i)advance(chip,1);
+        CHECK(chip.status().state==Ch394::State::OpenSocket);
+        if(wrap) now_ms=0xfffffff0u;
+        const uint32_t issued_ms=now_ms;
+        chip.poll(now_ms);
+        CHECK(chip.status().state==Ch394::State::WaitCommand);
+        now_ms=issued_ms+1999u;chip.poll(now_ms);
+        CHECK(chip.status().state==Ch394::State::WaitCommand && chip.status().errors==0);
+        now_ms=issued_ms+2000u;chip.poll(now_ms);
+        CHECK(chip.status().state==Ch394::State::Backoff && chip.status().timeout.command==1);
+    }
+    {
+        Fixture f;prepare_network_snapshot();command_stuck=true;
+        Ch394 chip{f.arbiter};CHECK(chip.init(config));
+        for(unsigned i=0;i<150 && chip.status().state!=Ch394::State::WaitCommand;++i)advance(chip,1);
+        CHECK(chip.status().state==Ch394::State::WaitCommand);
+        now_ms+=500;chip.poll(now_ms);
+        CHECK(chip.status().state==Ch394::State::WaitCommand && !chip.status().timeout.sequence);
+        socket_regs[0][1]=0;socket_regs[0][3]=0x13;command_stuck=false;
+        advance(chip,8);
+        CHECK(chip.status().state==Ch394::State::Monitor && socket_regs[0][3]==0x14);
+        CHECK(!chip.status().errors && !chip.status().timeout.sequence);
+    }
+    {
+        Fixture f;prepare_network_snapshot();command_stuck=true;
+        Ch394 chip{f.arbiter};CHECK(chip.init(config));
+        for(unsigned i=0;i<150 && chip.status().state!=Ch394::State::WaitCommand;++i)advance(chip,1);
+        CHECK(chip.status().state==Ch394::State::WaitCommand);
+        // Distinct live values ensure diagnostic readback is not fabricated
+        // from intended configuration. No chip writes may occur while sampling.
+        common_regs[0x2e]=0xb8;
+        common_regs[0]=0x20;common_regs[0x3e]=1;common_regs[0x3f]=2;
+        socket_regs[0][2]=0x10;
+        const unsigned writes_before=network_writes;
+        wait_snapshot(chip);
+        const auto snapshot=chip.status().timeout;
+        CHECK(network_writes==writes_before && snapshot_socket_reads==1);
+        CHECK(snapshot.failed_state==uint32_t(Ch394::State::WaitCommand) && snapshot.command==1);
+        CHECK(snapshot.valid_mask==31 && snapshot.sn_mode==1 && snapshot.sn_ctrl==1);
+        CHECK(snapshot.sn_int==0x10 && snapshot.sn_sta==0 && snapshot.sn_port==39400);
+        CHECK(snapshot.phy_cfg==0xb8 && snapshot.mode_reg==0x20 && snapshot.chip_config==1 && snapshot.reg_page==2);
+        // The capture takes modeled SPI time. The full backoff still follows it.
+        now_ms+=249;chip.poll(now_ms);CHECK(chip.status().state==Ch394::State::Backoff);
+        ++now_ms;chip.poll(now_ms);CHECK(chip.status().state==Ch394::State::ResetLow);
+        common_regs[0x2e]=0xb9;
+        advance(chip,2300);
+        CHECK(chip.status().errors>=2 && snapshot_socket_reads==1);
+        CHECK(std::memcmp(&snapshot,&chip.status().timeout,sizeof(snapshot))==0);
+        chip.deinit();CHECK(chip.status().timeout.sequence==1);
+        CHECK(chip.init(config));CHECK(chip.status().timeout.sequence==0 && chip.status().timeout.valid_mask==0);
+        wait_snapshot(chip);CHECK(chip.status().timeout.phy_cfg==0xb9 && snapshot_socket_reads==2);
+    }
+    {
+        Fixture f;prepare_network_snapshot();command_stuck=true;fail_snapshot_socket_read=true;
+        Ch394 chip{f.arbiter};CHECK(chip.init(config));wait_snapshot(chip);
+        const auto snapshot=chip.status().timeout;
+        CHECK(snapshot.command==1 && snapshot.valid_mask==30);
+        CHECK(snapshot.sn_ctrl==0 && snapshot.sn_mode==0 && snapshot.sn_port==0);
+        CHECK(snapshot.phy_cfg==0xb9 && f.arbiter.diagnostics().errors>0);
+        advance(chip,500);CHECK(snapshot_socket_reads==1);
+        CHECK(std::memcmp(&snapshot,&chip.status().timeout,sizeof(snapshot))==0);
+    }
+    {
+        Fixture f;prepare_network_snapshot();open_status_stuck=true;
+        Ch394 chip{f.arbiter};CHECK(chip.init(config));wait_snapshot(chip);
+        const auto& snapshot=chip.status().timeout;
+        CHECK(snapshot.failed_state==uint32_t(Ch394::State::WaitOpen));
+        CHECK(snapshot.command==1 && snapshot.sn_ctrl==0 && snapshot.sn_sta==0 && snapshot.valid_mask==31);
+        CHECK(now_ms<300); // WaitOpen status timeout is still 100 ms.
+    }
+    {
+        Fixture f;prepare_network_snapshot();stuck_command=2;
+        Ch394 chip{f.arbiter};CHECK(chip.init(config));wait_snapshot(chip);
+        const auto& snapshot=chip.status().timeout;
+        CHECK(snapshot.failed_state==uint32_t(Ch394::State::WaitCommand));
+        CHECK(snapshot.command==2 && snapshot.sn_ctrl==2 && snapshot.sn_sta==0x13 && snapshot.valid_mask==31);
+        CHECK(now_ms<300); // LISTEN command timeout is still 100 ms.
+    }
+    {
+        Fixture f;prepare_network_snapshot();common_regs[0x39]=0;
+        Ch394 chip{f.arbiter};CHECK(chip.init(config));advance(chip,100);
+        CHECK(chip.status().last_error==Ch394::Error::RegisterCheck);
+        CHECK(!chip.status().timeout.sequence && !snapshot_socket_reads);
+    }
+}
+#endif
 int main() {
     test_helpers(); test_arbiter(); test_dual_spi(); test_hx711(); test_network();
+#if defined(REHAB_V13)
+    test_network_wait_link();
+    test_network_timeout_snapshot();
+#endif
     std::printf("driver model tests: %u checks passed (actual arbiter/HX711/CH394 sources)\n", checks);
 }

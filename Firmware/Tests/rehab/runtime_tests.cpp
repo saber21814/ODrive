@@ -31,6 +31,8 @@ static uint16_t stop_pin=0;
 #if defined(REHAB_V13)
 static bool gate_ready=true;
 static uint32_t gate_generation=0, board_spi_services=0;
+static uint32_t phase_adc_words[4]={};
+uint32_t rehab_board_phase_adc_word(unsigned index) { return index<4?phase_adc_words[index]:0; }
 void rehab_board_physical_stop(bool edge) {
     // Board is separately tested with the actual production gate wrapper.
     if(edge || gate_ready)++gate_generation;
@@ -295,6 +297,21 @@ static void test_network_idle_admission() {
     axes[0].requested_state_=Axis::AXIS_STATE_UNDEFINED;rp::owner_session=11;
     CHECK(rp::set_network(nullptr,payload,sizeof(payload))==Result::InvalidConfig);
     CHECK(rp::network_revision==1);
+#if defined(REHAB_V13)
+    // Appending Fibre diagnostics must not grow the existing binary response.
+    rp::network_status.timeout.sequence=1;
+    rp::network_status.timeout.valid_mask=0x1f;
+    rp::network_status.timeout.sn_ctrl=1;
+    rp::network_status.timeout.sn_port=39400;
+    CHECK(rp::diagnostic_word(81)==1 && rp::diagnostic_word(84)==0x1f);
+    CHECK(rp::diagnostic_word(86)==1 && rp::diagnostic_word(89)==39400);
+    submit(0,rw::Command::Diagnostics,frame.session,3);
+    response=replies(0);
+    CHECK(response.size()==1 && result_code(response[0])==uint32_t(Result::Ok));
+    CHECK(response[0].length==256); // result word plus 63 diagnostic words
+    CHECK(rp::network_revision==1 && rp::network_status.timeout.sn_ctrl==1);
+    CHECK(!motors[0].is_armed_ && !rp::motor_may_arm());
+#endif
 }
 #endif
 static void test_deadlines() {
@@ -605,6 +622,16 @@ static void test_partial_frame_fault_boundaries() {
     submit(0,rw::Command::ClearFaults,session,6);CHECK(result_code(replies(0)[0])==uint32_t(Result::Ok) && !rp::latched);
 }
 #if defined(REHAB_V13)
+static void test_phase_adc_diagnostics() {
+    reset_runtime();
+    phase_adc_words[0]=123;phase_adc_words[1]=0x878007ffu;
+    phase_adc_words[2]=2;phase_adc_words[3]=9;
+    for(unsigned i=0;i<4;++i) {
+        CHECK(rp::diagnostic_word(94+i)==phase_adc_words[i]);
+        CHECK(rp::diagnostic_word(94+i)==phase_adc_words[i]);
+    }
+    CHECK(!rp::motor_may_arm() && !rp::brake_may_arm());
+}
 static void test_physical_stop_revision() {
     reset_runtime();rp::early_init();
     CHECK(stop_port==GPIOC && stop_pin==GPIO_PIN_4 && stop_callback);
@@ -628,14 +655,36 @@ static void test_physical_stop_revision() {
     reset_runtime();worker_once();CHECK(board_spi_services==1);
 }
 #endif
+static void test_locked_bench_voltage_default() {
+    const float cases[] = {0.0f, 27.0f, -1.0f, NAN};
+    for(float configured : cases) {
+        reset_runtime();
+        odrv.config_.dc_bus_undervoltage_trip_level=8.0f;
+        odrv.config_.dc_bus_overvoltage_trip_level=configured;
+        rp::early_init();
+        const float actual=odrv.config_.dc_bus_overvoltage_trip_level;
+#if defined(REHAB_V13) && !REHAB_REAL_MOTOR
+        if(configured==0.0f) CHECK(actual==28.0f);
+        else
+#endif
+        if(std::isnan(configured)) CHECK(std::isnan(actual));
+        else CHECK(actual==configured);
+        CHECK(odrv.config_.dc_bus_undervoltage_trip_level==8.0f);
+        CHECK(!odrv.config_.enable_brake_resistor);
+        CHECK(!rp::motor_may_arm() && !rp::brake_may_arm());
+        CHECK(!rp::axis_request_allowed(Axis::AXIS_STATE_MOTOR_CALIBRATION));
+    }
+}
 int main() {
     struct Test { const char* name; void (*run)(); } tests[] = {
+        {"locked bench zero OV fallback and isolation",test_locked_bench_voltage_default},
         {"native idle task queue admission",test_idle_task_queue},
 #if REHAB_ENABLE_NETWORK
         {"SetNetwork through actual wire/runtime admission",test_network_idle_admission},
 #endif
 #if defined(REHAB_V13)
         {"V1.3 physical STOP startup/edges/generation",test_physical_stop_revision},
+        {"V1.3 read-only ADC diagnostic mapping",test_phase_adc_diagnostics},
 #endif
         {"hardware lock",test_hardware_lock},{"native arbitration",test_native_arbitration},
         {"diagnostic argument property copy",test_diagnostic_property_argument},

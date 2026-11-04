@@ -12,15 +12,33 @@ struct NetworkConfig {
 class Ch394 {
 public:
     enum class State : uint8_t { Disabled, ResetLow, ResetWait, Identify,
-        Configure, OpenSocket, WaitCommand, WaitOpen, Monitor, Backoff };
+        Configure, OpenSocket, WaitCommand, WaitOpen, Monitor, Backoff
+#if defined(REHAB_V13)
+        , WaitLink = 10
+#endif
+    };
     enum class Error : uint8_t { None, InvalidConfig, Spi, RegisterCheck,
-        CommandTimeout, SocketTimeout, IpConflict, BadCount };
+        CommandTimeout, SocketTimeout, IpConflict, BadCount
+#if defined(REHAB_V13)
+        , LinkTimeout = 8
+#endif
+    };
+#if defined(REHAB_V13)
+    struct TimeoutSnapshot {
+        uint32_t sequence=0, failed_state=0, command=0, valid_mask=0;
+        uint32_t sn_mode=0, sn_ctrl=0, sn_int=0, sn_sta=0, sn_port=0;
+        uint32_t phy_cfg=0, mode_reg=0, chip_config=0, reg_page=0;
+    };
+#endif
     struct Status {
         State state = State::Disabled;
         Error last_error = Error::None;
         uint32_t errors = 0, reconnects = 0, rx_bytes = 0, tx_bytes = 0;
         uint8_t chip_version = 0, socket_state = 0;
         bool link = false, connected = false;
+#if defined(REHAB_V13)
+        TimeoutSnapshot timeout;
+#endif
     };
     explicit Ch394(Stm32SpiArbiter& arbiter) : arbiter_(arbiter) {}
     // Starts an asynchronous reset/configuration sequence. Successful return
@@ -46,6 +64,10 @@ private:
     bool transmit_chunk(uint32_t now_ms);
     void fail(Error error, uint32_t now_ms);
     void reset_queues();
+#if defined(REHAB_V13)
+    void capture_timeout();
+    uint8_t last_command_ = 0;
+#endif
     Stm32SpiArbiter& arbiter_;
     NetworkConfig config_{};
     Status status_{};

@@ -24,6 +24,17 @@ attrs.update({n:{'type':'readonly float32','c_getter':'get_'+n+'()'} for n in FL
 if a.board=='v13':
     attrs.update({n:{'type':'readonly uint32','c_getter':'get_'+n+'()'} for n in V13_WORDS})
     attrs['aux_temperature_c']={'type':'readonly float32','c_getter':'get_aux_temperature_c()'}
+    # Append after ALL existing V1.3 properties, including the temperature float.
+    timeout_words = ['network_snapshot_sequence','network_failed_state','network_last_command',
+        'network_snapshot_valid','network_sn_mode','network_sn_ctrl','network_sn_int',
+        'network_sn_sta','network_sn_port','network_phy_cfg','network_mode_reg',
+        'network_chip_config','network_reg_page']
+    attrs.update({n:{'type':'readonly uint32','c_getter':'get_'+n+'()'} for n in timeout_words})
+    # Append DC ADC observer fields; no changes to framed Diagnostics.
+    adc_words = ['phase_adc_sequence','phase_adc_packed','phase_adc_age_ms','phase_adc_errors']
+    attrs.update({n:{'type':'readonly uint32','c_getter':'get_'+n+'()'} for n in adc_words})
+    bench_words = ['bench_enabled','bench_active','bench_stage','bench_state','bench_reason','bench_epoch']
+    attrs.update({n:{'type':'readonly uint32','c_getter':'get_'+n+'()'} for n in bench_words})
 intfs['RehabStatus']={'c_is_class':True,'attributes':attrs}
 data['valuetypes']['ODrive.StreamProtocolType']['values']['Rehab']={'doc':'Exclusive framed rehabilitation protocol. No ASCII or stdout on this stream.'}
 pathlib.Path(a.output).write_text(yaml.safe_dump(data,sort_keys=False,allow_unicode=True),encoding='utf-8')

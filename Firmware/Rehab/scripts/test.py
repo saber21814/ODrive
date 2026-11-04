@@ -99,6 +99,16 @@ def specifications(quick):
             flags=STRICT + ["-Wdouble-promotion"],
         ))
 
+    suites.append(suite('bench_session',['Tests/rehab/bench_session_tests.cpp'],
+        production=['Rehab/platform/bench_session.hpp']))
+    for application in (0,1):
+        suites.append(suite('bench_service_a'+str(application), SERVICE+['Tests/rehab/bench_service_tests.cpp'],
+            definitions=['REHAB_ENABLE_APPLICATION='+str(application)],production=SERVICE))
+    for name,source,production in (
+        ('bench_client','Tests/rehab/bench_client_tests.py','Rehab/scripts/bench.py'),
+        ('bench_build','Tests/rehab/bench_build_tests.py','Rehab/scripts/build.py')):
+        item=suite(name,[source],production=[production]);item['python']=True;suites.append(item)
+
     driver_sources = [
         "Rehab/drivers/spi_arbiter.cpp", "Rehab/drivers/hx711.cpp", "Rehab/drivers/ch394.cpp"
     ]
@@ -109,6 +119,16 @@ def specifications(quick):
         production=driver_sources,
         notes=["Actual V1.2 SPI arbiter, HX711 and CH394 sources; HAL/register models do not verify electrical timing."],
     ))
+    driver_v13 = next(s for s in suites if s['name'] == 'driver_models').copy()
+    driver_v13['name'] = 'driver_models_v13'
+    driver_v13['definitions'] = driver_v13['definitions'] + ['REHAB_V13=1']
+    driver_v13['notes'] = ['V1.3 driver timeout snapshots; modeled SPI faults and registers, not electrical validation.']
+    suites.append(driver_v13)
+    driver_v13_real = driver_v13.copy()
+    driver_v13_real["name"] = "driver_models_v13_real_flag"
+    driver_v13_real["definitions"] = driver_v13["definitions"] + ["REHAB_REAL_MOTOR=1"]
+    suites.append(driver_v13_real)
+
     suites.append(suite(
         "isr_timing", ["Tests/rehab/isr_timing_tests.cpp", "Rehab/platform/isr_timing.cpp"],
         flags=GNU_STRICT, includes=["Tests/rehab/timing_mocks", "."],
@@ -143,6 +163,14 @@ def specifications(quick):
     network_runtime['notes'] = network_runtime['notes'] + [
         'Actual SetNetwork admission and wire response; CH394 transport is a disconnected host carrier.']
     suites.append(network_runtime)
+    bench_runtime=network_runtime.copy()
+    bench_runtime['name']='bench_runtime_v13'
+    bench_runtime['definitions']=network_runtime['definitions']+['REHAB_BENCH=1']
+    bench_runtime['sources']=['Tests/rehab/bench_runtime_tests.cpp','Rehab/platform/isr_timing.cpp']+SERVICE
+    bench_runtime['production_sources']=network_runtime['production_sources']+['Rehab/platform/bench_native.hpp','Rehab/platform/bench_session.hpp']
+    bench_runtime['notes']=['Actual bench adapter/runtime; native algorithms and hardware are mocked, not physical acceptance.']
+    suites.append(bench_runtime)
+
 
     suites.append(suite(
         "native_ingress", ["Tests/rehab/ingress_tests.cpp", "Rehab/platform/isr_timing.cpp"] + SERVICE,
@@ -165,15 +193,18 @@ def specifications(quick):
         production=["Rehab/platform/stream.cpp", "fibre-cpp/include/fibre/async_stream.hpp"],
         notes=["Actual Stream adapter and Fibre async interfaces; endpoint and byte-queue carriers test partial transfers, reconnects and delayed completion callbacks."],
     ))
-    for board in ('native','v12','v13'):
+    for board in ('native','v12','v13','bench'):
         suites.append(suite(
-            {'native':'nvm_native','v12':'nvm_rehab','v13':'nvm_rehab_v13'}[board], ["Tests/rehab/nvm_tests.cpp"],
+            {'native':'nvm_native','v12':'nvm_rehab','v13':'nvm_rehab_v13','bench':'nvm_bench_v13'}[board], ["Tests/rehab/nvm_tests.cpp"],
             includes=[".", "fibre-cpp/include"],
-            definitions=(["REHAB_V12=1"] if board!='native' else [])+(["REHAB_V13=1"] if board=='v13' else []),
+            definitions=(["REHAB_V12=1"] if board!='native' else [])+(["REHAB_V13=1"] if board in ('v13','bench') else [])+(['REHAB_BENCH=1'] if board=='bench' else []),
             production=["MotorControl/nvm_config.hpp", "Drivers/STM32/stm32_nvm.h", "fibre-cpp/crc.hpp"],
             notes=["Actual ConfigManager and CRC implementation with an in-memory NVM carrier; tests two-pass persistence, version-specific CRC seeds, truncation, corruption and interrupted writes."],
         ))
 
+    suites.append(suite('phase_adc_monitor',['Tests/rehab/phase_adc_monitor_tests.cpp'],
+        production=['Rehab/platform/phase_adc_monitor.hpp'],
+        notes=['DC ADC observer packing and stale/invalid handling; no physical current qualification.']))
     suites.append(suite('temperature_v13',['Tests/rehab/temperature_tests.cpp'],
         definitions=['REHAB_V13=1'],production=['Rehab/platform/temperature.hpp','Rehab/platform/commissioning.hpp']))
     suites.append(suite('v13_gate',['Tests/rehab/v13_gate_tests.cpp'],

@@ -393,6 +393,11 @@ elseif boards[boardversion] == nil then
     error("unknown board version "..boardversion)
 end
 board = boards[boardversion]
+if tup.getconfig('REHAB_BENCH') == 'true' and
+   (boardversion ~= 'rehab-v1.3' or tup.getconfig('REHAB_REAL_MOTOR') == 'true' or
+    tup.getconfig('REHAB_NETWORK') ~= 'true' or tup.getconfig('REHAB_PROTOCOL') ~= 'true') then
+    error('REHAB_BENCH requires V1.3, network/protocol, and REHAB_REAL_MOTOR=false')
+end
 
 if boardversion == 'rehab-v1.2' or boardversion == 'rehab-v1.3' then
     CFLAGS += '-IDrivers/STM32'
@@ -414,6 +419,7 @@ if boardversion == 'rehab-v1.2' or boardversion == 'rehab-v1.3' then
     end
     CFLAGS += '-DREHAB_STAGE='..(tup.getconfig('REHAB_STAGE')~='' and tup.getconfig('REHAB_STAGE') or '1')
     CFLAGS += '-DREHAB_REAL_MOTOR='..(tup.getconfig('REHAB_REAL_MOTOR')=='true' and '1' or '0')
+    CFLAGS += '-DREHAB_BENCH='..(tup.getconfig('REHAB_BENCH')=='true' and '1' or '0')
 end
 
 -- --not 

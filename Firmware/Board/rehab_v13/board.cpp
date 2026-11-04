@@ -17,6 +17,7 @@
 #include <Rehab/platform/runtime.hpp>
 #include <Rehab/platform/board_access.hpp>
 #include <Rehab/platform/isr_timing.h>
+#include <Rehab/platform/phase_adc_monitor.hpp>
 
 // this should technically be in task_timer.cpp but let's not make a one-line file
 bool TaskTimer::enabled = false;
@@ -279,23 +280,41 @@ void start_timers() {
     }
 }
 
-static bool fetch_and_reset_adcs(std::optional<Iph_ABC_t>* current0) {
+static rehab::platform::PhaseAdcMonitor phase_adc_monitor;
+
+uint32_t rehab_board_phase_adc_word(unsigned index) {
+    CRITICAL_SECTION() {
+        return phase_adc_monitor.word(index, HAL_GetTick());
+    }
+    return 0;
+}
+
+static bool fetch_and_reset_adcs(std::optional<Iph_ABC_t>* current0, bool capture_dc = false) {
     bool all_adcs_done = (ADC1->SR & ADC_SR_JEOC) == ADC_SR_JEOC
         && (ADC2->SR & (ADC_SR_EOC | ADC_SR_JEOC)) == (ADC_SR_EOC | ADC_SR_JEOC)
         && (ADC3->SR & (ADC_SR_EOC | ADC_SR_JEOC)) == (ADC_SR_EOC | ADC_SR_JEOC);
     if (!all_adcs_done) {
+        if (capture_dc) phase_adc_monitor.record(0, 0, false, false, false, false, HAL_GetTick());
         return false;
     }
 
     vbus_sense_adc_cb(ADC1->JDR1);
 
-    if (m0_gate_driver.is_ready()) {
-        std::optional<float> phB = motors[0].phase_current_from_adcval(ADC2->JDR1);
-        std::optional<float> phC = motors[0].phase_current_from_adcval(ADC3->JDR1);
+    const uint32_t raw_b = ADC2->JDR1;
+    const uint32_t raw_c = ADC3->JDR1;
+    const bool gate_ready = m0_gate_driver.is_ready();
+    bool conversion_valid = false;
+    if (gate_ready) {
+        std::optional<float> phB = motors[0].phase_current_from_adcval(raw_b);
+        std::optional<float> phC = motors[0].phase_current_from_adcval(raw_c);
         if (phB.has_value() && phC.has_value()) {
+            conversion_valid = true;
             *current0 = {-*phB - *phC, *phB, *phC};
         }
     }
+
+    if (capture_dc) phase_adc_monitor.record(raw_b, raw_c, true, gate_ready,
+        conversion_valid, (TIM1->BDTR & TIM_BDTR_MOE_Msk) != 0, HAL_GetTick());
 
     ADC1->SR = ~(ADC_SR_JEOC);
     ADC2->SR = ~(ADC_SR_EOC | ADC_SR_JEOC | ADC_SR_OVR);
@@ -460,6 +479,7 @@ void ControlLoop_IRQHandler(void) {
         adc_ready = (ADC2->SR & ADC_SR_EOC) != 0;
     }
     if (!adc_ready) {
+        phase_adc_monitor.record(0, 0, false, false, false, false, HAL_GetTick());
         motors[0].disarm_with_error(Motor::ERROR_BAD_TIMING);
         if (timestamp_ != timestamp + TIM_1_8_PERIOD_CLOCKS * (TIM_1_8_RCR + 1)) {
             motors[0].disarm_with_error(Motor::ERROR_CONTROL_DEADLINE_MISSED);
@@ -469,7 +489,7 @@ void ControlLoop_IRQHandler(void) {
         return;
     }
 
-    if (!fetch_and_reset_adcs(&current0)) {
+    if (!fetch_and_reset_adcs(&current0, true)) {
         motors[0].disarm_with_error(Motor::ERROR_BAD_TIMING);
     }
 

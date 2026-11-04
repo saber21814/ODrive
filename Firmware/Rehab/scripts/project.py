@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V1.3 full project entrypoint. Only the explicit flash action accesses hardware."""
+"""V1.3 full/explicit bench entrypoint. Only the flash action accesses hardware."""
 import argparse
 import contextlib
 import hashlib
@@ -23,13 +23,16 @@ def run_guard():
                    cwd=FW, check=True)
 
 
-def validate(folder=ARTIFACTS):
+def validate(folder=ARTIFACTS, profile='full'):
     """Reject failed, mismatched, stale or modified output before programmer launch."""
+    if profile not in ('full', 'bench'): raise RuntimeError('Unsupported project profile')
     report = json.loads((folder / 'build.json').read_text(encoding='utf-8'))
-    required = {'status': 'passed', 'board': 'v13', 'profile': 'full',
-                'real_motor_enabled': False, 'motion_policy': 'rehab_inhibited'}
+    bench = profile == 'bench'
+    required = {'status': 'passed', 'board': 'v13', 'profile': profile,
+                'real_motor_enabled': bench, 'bench_mode': bench,
+                'motion_policy': 'bounded_native_bench' if bench else 'rehab_inhibited'}
     for key, value in required.items():
-        if report.get(key) != value or (key == 'real_motor_enabled' and report.get(key) is not False):
+        if report.get(key) != value or (isinstance(value, bool) and report.get(key) is not value):
             raise RuntimeError('Refusing artifact: invalid ' + key)
     if report.get('source_sha256') != firmware_build.source_digest():
         raise RuntimeError('Refusing artifact: sources changed since build')
@@ -40,14 +43,15 @@ def validate(folder=ARTIFACTS):
         actual = hashlib.sha256(path.read_bytes()).hexdigest()
         if actual != report.get('artifact_sha256', {}).get(name):
             raise RuntimeError('Refusing artifact: hash mismatch for ' + name)
-    result = resources.inspect('full', 'v13')
+    result = resources.inspect(profile, 'v13', folder=folder)
     if result['errors']:
         raise RuntimeError('Refusing artifact: ' + '; '.join(result['errors']))
     endpoints = (folder / 'endpoints.hpp').read_text(encoding='utf-8')
     if not all(name in endpoints for name in ('rehab', 'board_revision', 'hardware_locked')):
         raise RuntimeError('Refusing artifact: missing V1.3 interface')
     elf = folder / 'ODriveFirmware.elf'
-    print('VERIFIED: rehab-v1.3 / full / real motor LOCKED', flush=True)
+    print('VERIFIED: rehab-v1.3 / ' + profile + (' / bounded native motor CAPABLE; boot IDLE, explicit command required'
+          if bench else ' / real motor LOCKED'), flush=True)
     print('ELF: ' + str(elf), flush=True)
     print('SHA256: ' + report['artifact_sha256'][elf.name], flush=True)
     return elf
@@ -87,15 +91,19 @@ def project_lock():
         path.unlink()
 
 
-def execute(action, dry_run=False, serial=''):
+def execute(action, dry_run=False, serial='', profile='full'):
     # Reject malformed parameters before starting a build, with no device access.
-    command = programmer_command(ARTIFACTS / 'ODriveFirmware.elf', serial)
+    if action not in ('build', 'check', 'flash') or profile not in ('full', 'bench'):
+        raise RuntimeError('Unsupported action/profile')
+    folder = ARTIFACTS if profile == 'full' else FW/'build/rehab/v13/bench'
+    command = programmer_command(folder / 'ODriveFirmware.elf', serial)
     with project_lock():
         run_guard()
         if action in ('build', 'flash'):
-            firmware_build.build('full', jobs=1, board='v13')
+            firmware_build.build(profile, jobs=1, board='v13')
         run_guard()
-        validate()
+        if profile == 'full': validate()
+        else: validate(folder, profile=profile)
         if action == 'flash':
             print('PROGRAMMER argv: ' + json.dumps(command), flush=True)
             if dry_run:
@@ -109,9 +117,10 @@ def main():
     parser.add_argument('action', choices=('build', 'check', 'flash'))
     parser.add_argument('--dry-run', action='store_true', help='flash preflight only; never launch OpenOCD')
     parser.add_argument('--serial', default='', help='Optional ST-Link serial number')
+    parser.add_argument('--profile', choices=('full', 'bench'), default='full')
     args = parser.parse_args()
     try:
-        execute(args.action, args.dry_run, args.serial)
+        execute(args.action, args.dry_run, args.serial, args.profile)
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.CalledProcessError) as error:
         print('FAILED (no further commands executed): ' + str(error), file=sys.stderr)
         return 1

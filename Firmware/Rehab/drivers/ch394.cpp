@@ -12,6 +12,14 @@ constexpr uint16_t gint = 0x0015, phy_cfg = 0x002e, chipv = 0x0039, chip_config 
 constexpr uint16_t sn_mode = 0x0000, sn_ctrl = 0x0001, sn_int = 0x0002, sn_sta = 0x0003;
 constexpr uint16_t sn_port = 0x0004, sn_rx_size = 0x001e, sn_tx_size = 0x001f;
 constexpr uint16_t sn_tx_free = 0x0020, sn_tx_wr = 0x0024, sn_rx_count = 0x0026, sn_rx_rd = 0x0028;
+#if defined(REHAB_V13)
+// Keep the V1.3 bench-validated initialization independent of the motor flag.
+// This is a non-blocking OPEN poll deadline; other commands retain 100 ms.
+// V1.2 retains its original initialization and deadline.
+constexpr uint32_t open_command_timeout_ms = 2000;
+#else
+constexpr uint32_t open_command_timeout_ms = 100;
+#endif
 const SPI_InitTypeDef spi_config = {
     .Mode = SPI_MODE_MASTER, .Direction = SPI_DIRECTION_2LINES, .DataSize = SPI_DATASIZE_8BIT,
     .CLKPolarity = SPI_POLARITY_LOW, .CLKPhase = SPI_PHASE_1EDGE, .NSS = SPI_NSS_SOFT,
@@ -39,6 +47,9 @@ bool Ch394::init(const NetworkConfig& config) {
     if (status_.state != State::Disabled) deinit();
     config_ = config;
     status_ = Status{};
+#if defined(REHAB_V13)
+    last_command_ = 0;
+#endif
     __HAL_RCC_GPIOA_CLK_ENABLE(); __HAL_RCC_GPIOC_CLK_ENABLE();
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
@@ -121,10 +132,43 @@ bool Ch394::write16(uint16_t address, uint16_t value) {
 }
 bool Ch394::command(uint8_t value, State next, uint32_t now_ms) {
     if (!write8(socket0, sn_ctrl, value)) return false;
+#if defined(REHAB_V13)
+    last_command_ = value;
+#endif
     command_next_ = next; status_.state = State::WaitCommand; state_since_ms_ = now_ms;
     return true;
 }
+#if defined(REHAB_V13)
+void Ch394::capture_timeout() {
+    // Network-task-only, after the existing timeout decision and before reset.
+    // Five bounded, read-only transactions. Failed reads remain invalid rather
+    // than reusing stale DMA bytes. This is a sequential diagnostic snapshot,
+    // not an atomic sample of all chip registers.
+    TimeoutSnapshot snapshot;
+    snapshot.failed_state = static_cast<uint32_t>(status_.state);
+    snapshot.command = last_command_;
+    uint8_t socket[6]{}, value=0;
+    if (transfer(socket0, sn_mode, false, socket, sizeof(socket))) {
+        snapshot.sn_mode=socket[0]; snapshot.sn_ctrl=socket[1];
+        snapshot.sn_int=socket[2]; snapshot.sn_sta=socket[3];
+        snapshot.sn_port=read_be16(socket+4); snapshot.valid_mask |= 1u;
+    }
+    if (read8(common, 0x0000, value)) { snapshot.mode_reg=value; snapshot.valid_mask |= 2u; }
+    if (read8(common, phy_cfg, value)) { snapshot.phy_cfg=value; snapshot.valid_mask |= 4u; }
+    if (read8(common, chip_config, value)) { snapshot.chip_config=value; snapshot.valid_mask |= 8u; }
+    if (read8(common, 0x003f, value)) { snapshot.reg_page=value; snapshot.valid_mask |= 16u; }
+    snapshot.sequence=1; // Latch the first attempt, including a partial failure.
+    status_.timeout=snapshot;
+}
+#endif
 void Ch394::fail(Error error, uint32_t now_ms) {
+#if defined(REHAB_V13)
+    if (error == Error::CommandTimeout && !status_.timeout.sequence) {
+        capture_timeout();
+        // Do not subtract capture time from the existing reset-low backoff.
+        now_ms = HAL_GetTick();
+    }
+#endif
     status_.last_error = error; ++status_.errors;
     status_.connected = status_.link = false;
     status_.state = State::Backoff; state_since_ms_ = now_ms;
@@ -225,7 +269,25 @@ void Ch394::poll(uint32_t now_ms) {
             if (value != status_.chip_version || value == 0 || value == 0xff) {
                 fail(Error::RegisterCheck, now_ms); return;
             }
-            configure_index_ = 0; status_.state = State::Configure; return;
+            configure_index_ = 0;
+#if defined(REHAB_V13)
+            // V1.3 initialization: WCH's CH394Q TCP-server example
+            // waits for PHY link before network/socket setup. Unlike its busy
+            // loop, defer to subsequent polls and bound a missing link to 10 s.
+            status_.state = State::WaitLink; state_since_ms_ = now_ms;
+#else
+            status_.state = State::Configure;
+#endif
+            return;
+#if defined(REHAB_V13)
+        case State::WaitLink:
+            if (!read8(common, phy_cfg, value)) { fail(Error::Spi, now_ms); return; }
+            status_.link = (value & 1u) != 0;
+            if (status_.link) status_.state = State::Configure;
+            else if (static_cast<uint32_t>(now_ms - state_since_ms_) >= 10000u)
+                fail(Error::LinkTimeout, now_ms);
+            return;
+#endif
         case State::Configure:
             if (!configure_step()) fail(Error::RegisterCheck, now_ms);
             return;
@@ -249,7 +311,9 @@ void Ch394::poll(uint32_t now_ms) {
                 }
                 status_.state = command_next_; state_since_ms_ = now_ms;
             }
-            else if (static_cast<uint32_t>(now_ms - state_since_ms_) >= 100) fail(Error::CommandTimeout, now_ms);
+            else if (static_cast<uint32_t>(now_ms - state_since_ms_) >=
+                     (command_next_ == State::WaitOpen ? open_command_timeout_ms : 100u))
+                fail(Error::CommandTimeout, now_ms);
             return;
         case State::Backoff:
             if (static_cast<uint32_t>(now_ms - state_since_ms_) < 250) return;

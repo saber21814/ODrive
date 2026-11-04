@@ -11,6 +11,13 @@ public:
     struct Status {
         unsigned state=0, last_error=0, chip_version=0, reconnects=0;
         bool link=false, connected=false;
+#if defined(REHAB_V13)
+        struct TimeoutSnapshot {
+            uint32_t sequence=0,failed_state=0,command=0,valid_mask=0;
+            uint32_t sn_mode=0,sn_ctrl=0,sn_int=0,sn_sta=0,sn_port=0;
+            uint32_t phy_cfg=0,mode_reg=0,chip_config=0,reg_page=0;
+        } timeout;
+#endif
     };
     explicit Ch394(MockSpiArbiter&) {}
     bool init(const NetworkConfig&) { return true; }

@@ -13,6 +13,7 @@ PROFILES = {
     'training': (4, 'HX711 NETWORK PROTOCOL APPLICATION TRAINING'),
     'statistics': (5, 'HX711 NETWORK PROTOCOL APPLICATION TRAINING STATISTICS'),
     'full': (6, 'HX711 NETWORK PROTOCOL APPLICATION TRAINING STATISTICS COMPENSATION'),
+    'bench': (6, 'HX711 NETWORK PROTOCOL APPLICATION TRAINING STATISTICS COMPENSATION'),
 }
 OPTIONS = 'HX711 NETWORK PROTOCOL APPLICATION TRAINING STATISTICS COMPENSATION'.split()
 RECOVERY = OUT / 'tup-config-recovery.json'
@@ -42,6 +43,8 @@ def source_digest():
     return digest.hexdigest()
 
 def build(profile, jobs=1, board='v12'):
+    if profile == 'bench' and board != 'v13':
+        raise RuntimeError('Native bench is available only for V1.3')
     OUT.mkdir(parents=True, exist_ok=True)
     dest = (OUT / 'v13' if board == 'v13' and profile != 'baseline' else OUT) / profile
     dest.mkdir(parents=True, exist_ok=True)
@@ -56,6 +59,7 @@ def build(profile, jobs=1, board='v12'):
         stage, enabled = PROFILES[profile]
         keep += ['CONFIG_BOARD_VERSION='+('rehab-v1.3' if board == 'v13' else 'rehab-v1.2'), 'CONFIG_DOCTEST=false', 'CONFIG_DEBUG=false', f'CONFIG_REHAB_STAGE={stage}', 'CONFIG_REHAB_REAL_MOTOR=false']
         keep += [f'CONFIG_REHAB_{o}={str(o in enabled.split()).lower()}' for o in OPTIONS]
+    keep += ['CONFIG_REHAB_BENCH='+str(profile=='bench').lower()]
     print(f'Building {profile}; outputs {dest}', flush=True)
     started = time.time()
     source_sha = source_digest()
@@ -91,8 +95,10 @@ def build(profile, jobs=1, board='v12'):
         size = subprocess.check_output(['arm-none-eabi-size', str(dest/'ODriveFirmware.elf')], text=True)
         if source_digest()!=source_sha: raise RuntimeError('Firmware sources changed during build; rebuild after edits finish.')
         report = {'profile':profile, 'board':'original' if profile=='baseline' else board, 'status':'passed', 'source_sha256':source_sha, 'elapsed_s':time.time()-started, 'compiler':subprocess.check_output(['arm-none-eabi-gcc','--version'], text=True).splitlines()[0], 'size':size,
-                  'real_motor_enabled':None if profile=='baseline' else False,
-                  'motion_policy':'original_board_native' if profile=='baseline' else 'rehab_inhibited',
+                  'real_motor_enabled':None if profile=='baseline' else profile=='bench',
+                  'bench_mode':profile=='bench',
+                  'motion_policy':('original_board_native' if profile=='baseline' else
+                                   'bounded_native_bench' if profile=='bench' else 'rehab_inhibited'),
                   'artifact_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in dest.glob('ODriveFirmware.*')}}
         (dest/'build.json').write_text(json.dumps(report,indent=2), encoding='utf-8')
         print(size, end='')
@@ -115,6 +121,7 @@ if __name__ == '__main__':
     a=p.parse_args()
     try:
         if a.recover_config: recover_config()
-        for name in ['baseline',*PROFILES] if a.profile=='all' else [a.profile]: build(name,a.jobs,a.board)
+        # Bench stays opt-in: "all" remains the existing locked regression set.
+        for name in ['baseline',*(n for n in PROFILES if n!='bench')] if a.profile=='all' else [a.profile]: build(name,a.jobs,a.board)
     except (RuntimeError,subprocess.CalledProcessError) as e:
         print(e,file=sys.stderr);sys.exit(1)

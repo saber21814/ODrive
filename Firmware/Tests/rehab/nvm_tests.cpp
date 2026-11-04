@@ -102,7 +102,9 @@ void check_valid_load() {
 }
 void test_current_format_round_trip() {
     reset_storage();
-#if defined(REHAB_V13)
+#if defined(REHAB_V13) && REHAB_BENCH
+    CHECK(config_version == 0x13b1);
+#elif defined(REHAB_V13)
     CHECK(config_version == 0x1301);
 #elif defined(REHAB_V12)
     CHECK(config_version == 0x1201);
@@ -121,7 +123,7 @@ void test_equal_payload_version_isolation() {
     CHECK(original.size() == rehab.size() && original.size() == image_size);
     CHECK(std::equal(original.begin(), original.begin() + payload_size, rehab.begin()));
     CHECK(!std::equal(original.begin() + payload_size, original.end(), rehab.begin() + payload_size));
-    for (const uint16_t version : {uint16_t(0x0001), uint16_t(0x1201), uint16_t(0x1301)}) {
+    for (const uint16_t version : {uint16_t(0x0001), uint16_t(0x1201), uint16_t(0x1301), uint16_t(0x13b1)}) {
         committed = image_for_version(version);
         successful_reads = 0;
         const auto result = load_current();

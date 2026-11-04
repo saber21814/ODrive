@@ -101,3 +101,158 @@ PCB DRC接口未完成验收；GATE/PWM关闭延迟、DRV实际寄存器恢复�
 | `Firmware/Rehab/scripts/test.py` | `e241ab515e9cf7bedda92ec68261936eb9daa5c2071c495a0584b4155ed179d4` | `aa4d8e67cabefda6a15a011877bad3c31c7d4092aba6a3738089701116d40293` |
 
 V1.3 full ARM 构建及 project.py flash --dry-run 核验通过：text=359000、data=5484、bss=145856；ELF SHA256 `2acd114bc04a713c5e6bd03558fd2c2bb8d6779ab30fc8c1d0907c707fd765a0`。real motor LOCKED，未执行烧录。首次 Tup 临时文件访问失败，保留日志后串行重试通过（idle_queue_fix_20261102/tup-first-attempt.log）。
+
+## 2026-11-03 CH394 首次命令超时快照
+
+实板证据：OPEN 等待阶段 next=7，SPI读取 Sn_CTRL 持续返回0x01；SPI1错误/超时未增长。用户报告AVDD33/VDDIO均3.3V、25MHz波形存在、AVDDK/DVDDK均恒定1.2V。这些记录不等于硬件已全面验收，根因尚未确定。
+
+V1.3首次CommandTimeout后、拉低复位前，由原网络任务执行5次有界只读SPI传输，锁存Socket前6字节和MODE/PHY_CFG/CHIP_CONFIG/REG_PAGE。部分读取失败按有效位区分；不伪造成功，不覆盖原始错误。快照跨重试保留，重新下发有效网络配置后清零。100ms判定不变；第一次故障复位前增加有限采集延迟，采集后重新开始250ms复位等待。没有在ISR、Fibre getter或关中断区执行SPI。
+
+独立审查ch394_snapshot_review通过；10组针对性主机回归全部通过。V1.2生成接口逐字节一致，V1.3原92属性顺序和值保留，尾部新增13只读属性；二进制Diagnostics仍为结果字加63诊断字。历史结果保留，新增日志位于build/rehab/ch394_snapshot_20261103。原生电机算法与准入锁未改。
+
+仅对以下已有登记文件更新精确哈希，未使用整体freeze，原始历史归档不变。
+
+| 文件 | 原登记 SHA256 | 本次 SHA256 |
+|---|---|---|
+| `Firmware/Rehab/drivers/ch394.cpp` | `ca39335061a5338aa892e74d56888afc6d986f36c24aaad07770b540ceffa20a` | `753a7b8e4bcde16ff1a66387c33e89cf0a9ea8831827f3012f745b021f981673` |
+| `Firmware/Rehab/drivers/ch394.hpp` | `33b6f85a7c86e54479fddd0d1d33523033109ab20403d9086e8a4e7b856bd9fb` | `2e49fcfff21e0ccfe9b49e2dd725296161f2f17c5cb08cd2de00bea46ab7eea9` |
+| `Firmware/Rehab/interface.py` | `a328fc7ab7aa858b9ea9001f2f332b6b6184a8c2b4c05d8e4c4e37a965777cc7` | `800d4ccf7430101ea2e9b0129f4b92ca5aa83f3d4cc99df2f3ee776445b4db2e` |
+| `Firmware/Rehab/platform/diagnostics.hpp` | `eb4f9b5ebac2c41b08ca820b208cf4f5ea77ef8ca0b01ea465d1ac19886eb8df` | `61d517fb2c39e497583d7f1b381f33d38a79a98df5711266a4b749ce7cdcba52` |
+| `Firmware/Rehab/platform/runtime.cpp` | `cb6bfb2317fd3ec90490f497f10124a5666b578002d594d897f86efe870733a4` | `4e447bc11b10cbb4d4ecf38e053ad9fb6023f130ef4a77ec38fc8fd0f68aee3a` |
+| `Firmware/Rehab/scripts/test.py` | `aa4d8e67cabefda6a15a011877bad3c31c7d4092aba6a3738089701116d40293` | `858a1422c7598a2d7a18dd17b2523c1986c32306c091afaed2a8d1f60a30fa58` |
+
+V1.3 full ARM构建及project.py check通过：text=362100、data=5484、bss=145960；ELF SHA256 `455fa2fcc869e6254ef21663ee76dcdb862d55c3cb562cfaf793911245cc4b79`。电机准入锁仍关闭使能；本轮未烧录、未接触硬件。诊断版改变对象布局，旧固定SRAM地址脚本不可复用。
+
+## 2026-11-03 CH394 OPEN等待时间软件对照（临时诊断）
+
+实板首次快照valid=0x1f、OPEN=1未清零、Sn_STA=0、TCP模式=1、端口39400、PHY_CFG=0xb8；用户测得RSTB高约3.3V持续170ms、低约250ms，无提前跌落。用户无法测SPI波形，改用软件单变量对照，尚无根因结论。
+
+仅V1.3且REHAB_REAL_MOTOR=0时，WaitCommand的OPEN截止从100ms改为2000ms；任务逐次poll，未增加阻塞循环，其他命令、WaitOpen、SPI速度、初始化顺序、250ms回退均不改。V1.2及真实电机标志路径仍100ms。快照接口/布局、原生算法和电机准入锁不改。诊断完成后恢复原截止时间。
+
+独立静态审查ch394_open_deadline_review未发现阻塞问题。三组主机模型通过：V1.2、V1.3锁定及V1.3真实电机标志分支（仅模拟）；覆盖截止边界、uint32回绕、延迟OPEN完成、其他命令截止及既有快照测试。日志build/rehab/ch394_open_deadline_20261103。
+
+仅更新以下一个原已登记文件的精确哈希，不扩大范围，不刷新原始归档；上述为诊断对照，不代表电气或电机验收。
+
+| 文件 | 原登记 SHA256 | 本次 SHA256 |
+|---|---|---|
+| `Firmware/Rehab/drivers/ch394.cpp` | `753a7b8e4bcde16ff1a66387c33e89cf0a9ea8831827f3012f745b021f981673` | `9b1a632f36a1c181a79f446d74dc2800af32208618a5b154ffe9f4829d8a5b0b` |
+
+ARM full编译及project.py build核验通过：text=362132、data=5484、bss=145960；ELF SHA256 `d6d003c70e4dc286f539a2f1f38e9602fb35d03b905105d7f828176c23b958d4`。real motor LOCKED，未烧录。原100ms镜像备份于build/rehab/ch394_open_deadline_20261103/previous_flashed.elf，原实板结果保留。
+
+## 2026-11-03 CH394 PHY先行初始化软件对照
+
+2秒OPEN实板仍超时（Sn_CTRL=1/Sn_STA=0），但快照PHY_CFG=0xbf。Windows12秒采到7次Up，100Mbps连接后约0.7至0.9秒断开，循环约2.4秒，与故障复位周期接近；不能将快照link当作持续链路通过。
+
+参考WCH作者V1.0.1（2024/12/09）CH394Q_TCP_SERVER/main.c先GetCHIPV、PHY_Check等待link，再InfParam/SocketBuf/ServerInit。官网直接下载未成功，使用公开镜像原厂署名源码（未执行），来源/压缩包SHA及选取原文见build/rehab/ch394_wait_link_20261103/reference/provenance.json。镜像不代表已核实为最新版。例程还存在500ms复位等待、CLOSE等差异，本轮不同时修改。
+
+仅V1.3锁定构建Identify后进入追加WaitLink=10，单次poll一次有界PHY读取，LINKS=1才进入原配置。无链路最多10000ms，追加LinkTimeout=8后走原复位回退，不生成OPEN快照。保留2秒OPEN、原速度/缓冲分配/复位及其他命令截止，V1.2和真实电机标志路径不变。原生算法与电机准入不改。独立审查ch394_open_deadline_review批准；四组主机测试通过（V12、V13、V13 real flag、runtime_network_v13），含无链路不写配置、迟到link、截止/回绕、SPI失败、deinit。
+
+本轮是临时对照而非已确认修复，只登记两个已审查文件精确哈希，旧基线不刷新。
+
+| 文件 | 原登记 SHA256 | 本次 SHA256 |
+|---|---|---|
+| `Firmware/Rehab/drivers/ch394.cpp` | `9b1a632f36a1c181a79f446d74dc2800af32208618a5b154ffe9f4829d8a5b0b` | `112d7a84951358971cd848f4d27137af696b7d1ac3310078a94b4074ec3f9291` |
+| `Firmware/Rehab/drivers/ch394.hpp` | `2e49fcfff21e0ccfe9b49e2dd725296161f2f17c5cb08cd2de00bea46ab7eea9` | `4a5d6a01f687a393d7fd22a1cf078048b9d7d690a50c3408467e0d27fe242446` |
+
+ARM full构建及project.py核验通过：text=362212、data=5484、bss=145960；ELF SHA256 `c39d646fda8d6e495e4ee460e141024566a579ec97f125aed69afc7474a19108`。real motor LOCKED；未烧录，实板结果待验。上一2秒OPEN镜像备份于build/rehab/ch394_wait_link_20261103/previous_flashed.elf。
+
+
+## 2026-11-03 T2 locked bench software preparation (partial)
+
+User reports a 0.47 ohm / 50 W brake resistor and a jumpered STOP loop. STOP physical testing is deferred by the user, not passed. Software brake stays disabled; hardware STOP-low braking is not disabled or qualified by this change. Previously passed USB, network N1-N5, 30-second combined check, HX711 raw and encoder basic results are retained. No claim of ten-minute endurance, force calibration, power-stage or motor acceptance.
+
+V1.3 CH394 now retains the bench-validated WaitLink and 2000 ms OPEN poll deadline with either REHAB_REAL_MOTOR flag. V1.2, all other command deadlines and protocol layout remain unchanged. This does not by itself qualify networking with an energized motor.
+
+V1.3 locked builds only: early_init replaces exactly zero native OV with 28 V for the current 24 V bench setup, after configuration loading and before ADC/PWM starts. Explicit nonzero limits remain unchanged; UV and motor/brake admission are unchanged. This is not a production voltage rating.
+
+Independent reviewer t2_locked_review approved the actual diff against this turn's before snapshots. Three driver models (V12, V13, V13 real flag) and four runtime models passed. Sandbox compiler WinError623 attempts are retained separately. Targeted logs: build/rehab/t2_locked_prep_20261103. No hardware accessed, flashed or energized. The restricted native motor commissioning entry and ADC diagnostics are still pending; this is only the locked software preparation part of T2.
+
+Only the following already-registered exact hashes were updated after review; original archives and all other registered hashes are unchanged. No full freeze.
+
+| File | Previous SHA256 | Reviewed SHA256 |
+|---|---|---|
+| `Firmware/Rehab/drivers/ch394.cpp` | `112d7a84951358971cd848f4d27137af696b7d1ac3310078a94b4074ec3f9291` | `eb5275bae8ae38a8ae70c1877a1d630a1b85b1327d3532d9448b0a7aa0695a4f` |
+| `Firmware/Rehab/platform/runtime.cpp` | `4e447bc11b10cbb4d4ecf38e053ad9fb6023f130ef4a77ec38fc8fd0f68aee3a` | `4b93164ca4300cac81e219a532ddd3244872fb89eb7476f52abda930442fe736` |
+| `Firmware/Rehab/scripts/test.py` | `858a1422c7598a2d7a18dd17b2523c1986c32306c091afaed2a8d1f60a30fa58` | `b25f09ba94db8bbe8394e5af6a2d3fa7c1c52a683d0db41839c5061536cad9e2` |
+
+ARM V1.3 full build and project.py check passed: text=362260, data=5484, bss=145960; ELF SHA256 8e83571504ad163a9074bd0bb124bf72f118a0864779fbf3094bde7ee9915ecc. Real motor LOCKED; no flashing performed.
+
+
+## 2026-11-03 T2 read-only DC ADC observer
+
+User confirmed the previous locked image (ELF 8e83571504ad163a9074bd0bb124bf72f118a0864779fbf3094bde7ee9915ecc) boots with OV=28 V without manual configuration, bus=23.925806 V, locked=1, armed=0, axis=IDLE, gate_ready=1, no errors. This startup-default repair is physically checked; prior test results remain retained.
+
+This phase appends four read-only Fibre properties for a DC sampling observer; it does not implement or enable the native motor bench entry. The second/DC ADC acquisition supplies its actual B/C raw counts and capture-time validity/PWM flags. Failed attempts clear the old validity and accumulate errors. A single packed word keeps the raw pair and flags together; separate getters are not a combined snapshot. Age distinguishes stale sampling. No native motor algorithm, current conversion, calibration callback or power-stage permission is changed. See protocol.md for the exact bit layout.
+
+Independent t2_locked_review approved the diff against this turn's before snapshots. Seven targeted host suites passed: V12/V13 runtime with both motor flags, network runtime, observer, and existing V13 board contract. Schema comparison proves V12 byte-identical and V13 preserves the complete 105-property prefix. Framed Diagnostics stays at 63 words. IRQ execution is bounded, but physical timing/current polarity/gain accuracy remain unverified. STOP remains deferred, not passed; brake is user-reported 0.47 ohm / 50 W and remains unqualified.
+
+ARM full build passed: text=363396, data=5484, bss=145976; ELF SHA256 ae12e8272d5ecaaf1f28ac3695823b7ed8ffdcf41d73d5a568079c2c38cf44b4. Motor locked, no hardware access or flashing in this phase. Logs and old image: build/rehab/t2_adc_20261103. Only the following reviewed file hashes are changed/added; original history and other registered hashes are unchanged, with no whole-manifest freeze.
+
+| File | Previous SHA256 | Reviewed SHA256 |
+|---|---|---|
+| `Firmware/Board/rehab_v13/board.cpp` | `b62a9cceddff16ba49a0f4cd41a27c966bcdea51ec79ce2d894e861303daabc2` | `207acffec3f0b23eec5a37f2769886eaf8c3e116d22ab9e40ba6bfa8c245b558` |
+| `Firmware/Rehab/platform/board_access.hpp` | `ce0d23c8edfa13d8077f52668e55209766864e8e5dedc957823e8f0468b341f5` | `49593212bd07b422cb63ec4fedbbada1afcff57c3987c10cf15e5e71e5594100` |
+| `Firmware/Rehab/platform/runtime.cpp` | `4b93164ca4300cac81e219a532ddd3244872fb89eb7476f52abda930442fe736` | `0f4bb8c435f62021234614daeab26cf0985dfb86b21aa806078d2b7bb083831e` |
+| `Firmware/Rehab/platform/diagnostics.hpp` | `61d517fb2c39e497583d7f1b381f33d38a79a98df5711266a4b749ce7cdcba52` | `0a47621ac20a3213bddd0c4e40a0e55f9083fd2b6ab092b713abd8088c10d2ec` |
+| `Firmware/Rehab/interface.py` | `800d4ccf7430101ea2e9b0129f4b92ca5aa83f3d4cc99df2f3ee776445b4db2e` | `aa1601d399af9d4365bdcd259cc990af515db8c6c95f8680bb247bfa06c605d4` |
+| `Firmware/Rehab/scripts/test.py` | `b25f09ba94db8bbe8394e5af6a2d3fa7c1c52a683d0db41839c5061536cad9e2` | `94146819ef05d13b1d4ba28ad72c843e0e75ff435c227dda0eb8152503e57f12` |
+| `Firmware/Rehab/platform/phase_adc_monitor.hpp` | `new` | `493355e2f8ebf0930b8939ab8118c56ccb2fc18a2682e5cbedaf12b21d143268` |
+
+
+## 2026-11-03 Complete bounded native bench implementation
+
+User explicitly approved a single complete code delivery before the final bench flash; no automatic flashing or motor operation. T3 physical testing is skipped at user request, not marked passed. User raw ADC evidence: B1998..2010/C2010..2019, age0..1ms,24173 additional samples, no new acquisition errors, no PWM, no native errors; this proves only raw acquisition at idle.
+
+New independent V1.3 bench profile retains full modules and successful network setup, with production REHAB_REAL_MOTOR=0 and all production commissioning declarations still false. Explicit replay-protected commands22..26 control one bounded native phase at a time. Full/make flash remains locked; make flash-bench explicitly selects the bench image. Profile metadata states movement capability truthfully while boot remains idle. Bench NVM CRC0x13B1 rejects full0x1301 and all other versions. Bench refuses persisted bench configuration and blocks native writes; only read diagnostics and emergency IDLE remain accessible. No original FOC/controller/encoder algorithm is modified.
+
+Native motor/encoder calibration and zero-torque/velocity/position phases have independent 500ms heartbeat, 8/15/5/10/10s absolute deadlines, staged in-boot calibration prerequisites, ADC/gate/bus/temp/numeric/speed/travel checks, and fail-closed synchronous disarm. Position setpoint is published only after native closed-loop startup. STOP/disconnect/Hello replacement/expired permission cannot resume motion. Calibration current is adjustable1..4A,0 means4A; max calibration voltage3V. Command current limits1A(zero)/3A(closed) are distinct from the fixed native6A Inorm trip envelope; the latter avoids misinterpreting existing idle synthetic offset currents as real current. Nominal temperatures and limits are provisional bench bounds, not qualified product parameters. Physical brake0.47ohm50W, STOP, current polarity/accuracy/IRQ timing and regeneration remain unqualified. Software brake stays disabled.
+
+Independent bench_safety_review approved parent safety/integration/NVM/schema. Executor B independently reviewed Executor A build/flash/resource changes; Executor A independently reviewed B protocol/CLI. Parent reviewed the final CLI precheck alignment (-10<=temperature<50,abs(startvelocity)<=.02). Targeted tests cover actual adapter/service with modeled native states, client TCP behavior, entrypoint safety and bidirectional NVM CRC isolation, without claiming native dynamics/electrical acceptance. Test reports, reviewed-before snapshots and initial compile failures are preserved under build/rehab/bench_complete_20261103. Initial guard regression correctly refused the unregistered diff before this reviewed registration; rerun after registration is required.
+
+Only these already-allowed integration/extension files were registered after review. Three new extension files are added with exact hashes; no modification whitelist expansion, historical archive update or whole freeze.
+
+| File | Previous SHA256 | Reviewed SHA256 |
+|---|---|---|
+| `Firmware/Rehab/platform/runtime.cpp` | `0f4bb8c435f62021234614daeab26cf0985dfb86b21aa806078d2b7bb083831e` | `cdfefa0a130a00e23fd2cc107b24fa22a07f9bd43061c4769ed74051db0a447c` |
+| `Firmware/Rehab/platform/bench_native.hpp` | `new` | `a6d570ed6060648fdd3d8ba7d4c3e5c09f758005c9994877a70efa0b7da77e2d` |
+| `Firmware/Rehab/platform/bench_session.hpp` | `new` | `d9871876427eda57da75f2bc9daa925643a9389a5ba57902bea27ce6300f3350` |
+| `Firmware/MotorControl/nvm_config.hpp` | `125a7a65311d013f181e52282ad30cee79db0b2de2fa0b409fbfb5a5e98306fd` | `dd1cb7087870492f902f6a9b922bcb289cf7cf27dd8871d85af6d162b653ad8e` |
+| `Firmware/Rehab/interface.py` | `aa1601d399af9d4365bdcd259cc990af515db8c6c95f8680bb247bfa06c605d4` | `1a55365338dab103a742100f66b0bb9b3c367f50206aff4397d0142ebc76cf36` |
+| `Firmware/Rehab/platform/diagnostics.hpp` | `0a47621ac20a3213bddd0c4e40a0e55f9083fd2b6ab092b713abd8088c10d2ec` | `0adcf4f6dc3cdca5c19b9f6f2eff05cb1a6f87fb5ac198bae66c1acb8c692231` |
+| `Firmware/Rehab/scripts/test.py` | `94146819ef05d13b1d4ba28ad72c843e0e75ff435c227dda0eb8152503e57f12` | `f05366610317edf70a3dacf01e7966df1f7b1638363f6474562d9b8b151da797` |
+| `Firmware/Rehab/scripts/build.py` | `b11a29a1fb5d49e59acc937d9389f0e1369529872c71c291c6e09e04e315f961` | `45e74d9ba5ce364e33f18cc8e91ec8d1a4203d93cc594a16e8d3a869619d0fca` |
+| `Firmware/Rehab/scripts/project.py` | `f750cb202dee960baf12a0f8cc0364b210aa25613e7ee997c66c0e9fc77be428` | `9cf98c1e8964e9bcaad9be72e9cdc47dc769a575169ac553f60d45cd3565a86f` |
+| `Firmware/Rehab/scripts/resources.py` | `a351db149d1aa1b40692b5e09f3834dc52ad946795dce53c717015c290a76d23` | `1f56a2e82a9a74adf7cffa02e5f7aa1e57dc707aaab2fd73857aab826f18cfee` |
+| `Firmware/Tupfile.lua` | `100a7363a5cbe56d8cf4733fd50b13122977e54113a2519f8e96ed249b42009d` | `ffef970f9b1b78e4ea445b8249fdbebac315565b3a960fe29a5249131b326926` |
+| `Firmware/GNUmakefile` | `b30518d6b4c52dbadfbeea15be5d0fbf51db7eb3e1081b7fab3589cbff118d2b` | `1905c5c0dade0e2b86c1b246bd087457ee9d9d6a32a9bf849433cb65a3ac2ea8` |
+| `Firmware/Rehab/protocol/frame.hpp` | `5e88cb8bb8cb421cf2fb4b75eb1bd6b2e759707fabd3879fd01b69b7fc9335f3` | `867e9c1b04ce09f56b66bc0f9d5e358f277a9c80691d36a6aba72fef00067a08` |
+| `Firmware/Rehab/protocol/service.hpp` | `73587a6ee3c1c53fb7c43ec9e73c72ef12743adec8567e61297ba33df55db190` | `2f0bec3fdf8013628ade11b029f3318f7c17b5506d654fe04548863ebd5d8c6b` |
+| `Firmware/Rehab/protocol/service.cpp` | `a221b5d04cc469fc04c6e59778028c51b6dbcf50f61ea714a379dc93e950f62c` | `eeae5deaec1764f4eab7b5bab076e4c9d59ae33697a45d0f5d624bbcb80908d8` |
+| `Firmware/Rehab/scripts/bench.py` | `new` | `ca7afe0c0b16d338d2be4c55a290ff7b7ddde1b672d6424c8677f140cb64d6dc` |
+
+Final validation: all21 targeted host suites passed after reviewed registration; the original pre-registration failure report is retained. V1.2 full, V1.3 locked full and V1.3 bench ARM builds and resource/symbol isolation all passed. V1.2 schema byte-identical; all109 preceding V1.3 properties preserved with6 appended. Bench flash --dry-run passed without invoking OpenOCD. Delivery evidence: build/rehab/bench_complete_20261103/delivery.json.
+
+v12_full ELF SHA256: `ca591b334530eaae11bee026979c9e351430f052e9deaafd3eee68af4b75fd97`; 352804	   5492	 144984	 503280	  7adf0	D:\00-ODrive-text\ODrive-fw-0.5.6\Firmware\build\rehab\full\ODriveFirmware.elf
+
+v13_full ELF SHA256: `a2b09302c32517991f20ac99979dc8972b533182b3c81bf768f4cfcd83eb0948`; 364932	   5492	 145984	 516408	  7e138	D:\00-ODrive-text\ODrive-fw-0.5.6\Firmware\build\rehab\v13\full\ODriveFirmware.elf
+
+v13_bench ELF SHA256: `b4658a976650ceb0ea5e2f5f646c700a247174872d4ba3e9b77d22f5712c1092`; 370156	   5540	 145992	 521688	  7f5d8	D:\00-ODrive-text\ODrive-fw-0.5.6\Firmware\build\rehab\v13\bench\ODriveFirmware.elf
+
+
+## 2026-11-03 minimal bench transition fix and no-encoder open-loop test
+
+User authorized the existing bench-only test additions, not a new product/profile or native algorithm change. The five production extension files below were independently read and approved by bench_safety_review. Native MotorControl tree bytes match this turn's before_hashes.json, and both immutable historical archives pass audit. No whitelist expansion or whole-manifest freeze is performed.
+
+Adapter now tolerates only the native queue's unarmed Pending UNDEFINED window with the expected outstanding request. Actual UNDEFINED still cannot arm; entry and heartbeat deadlines remain. Stage6 calls native LOCKIN_SPIN through the existing axis task, with bounded electrical angle speed/current/time, temporary direction convention and restoration after disarm. Phase1/6 do not rely on encoder position/speed; the irrelevant native controller overspeed check is temporarily disabled and restored after disarm, without altering controller.cpp or swallowing native errors. No encoder readiness or calibration is fabricated.
+
+Existing eight-byte BenchStart and 192-byte status stay compatible; phase1 optionally accepts explicit calibration voltage (12 bytes), stage6 requires16 bytes. Motor calibration current minimum is0.1A; legacy0/default4A remains explicit. Native6A trip envelope remains distinct from the stage6 command current cap1.5A. R acceptance follows the applied V/I envelope rather than the prior fixed0.75ohm assumption. No automatic retries, fault clearing, persistence, or hardware actions. New motor R/L must be measured again, pole pairs remain unconfirmed, and open-loop telemetry is not measured mechanical movement.
+
+Validation at review: six targeted host suites pass (adapter3876 checks), eight affected regression suites pass, and22 Python CLI tests pass. Tests model actual extension/service code and native task-queue transitions; they do not simulate physical motor dynamics or qualify STOP/current accuracy. Bench ARM build and resources pass; full-target isolation and final registered guard results are recorded in delivery.json after completion. Evidence retained under build/rehab/minimal_openloop_20261103 and build/rehab/bench_openloop_20261103.
+
+| File | Prior reviewed SHA256 | Independently reviewed SHA256 |
+|---|---|---|
+| `Firmware/Rehab/platform/bench_native.hpp` | `a6d570ed6060648fdd3d8ba7d4c3e5c09f758005c9994877a70efa0b7da77e2d` | `7250be3972a87992009f8fe46a8cebd9a7c7ecf8c21ba121c19d11ca98f0a239` |
+| `Firmware/Rehab/platform/bench_session.hpp` | `d9871876427eda57da75f2bc9daa925643a9389a5ba57902bea27ce6300f3350` | `0cc5452f1a6b6980ce5eacf4585ac4cdfe9b4eeda4c6f112db8da3df5aa56a15` |
+| `Firmware/Rehab/platform/runtime.cpp` | `cdfefa0a130a00e23fd2cc107b24fa22a07f9bd43061c4769ed74051db0a447c` | `6e38fe8cbf6d0d1e2b2e769fbf899f92624f710eee9bbfcd30f5e3b93ad8a87d` |
+| `Firmware/Rehab/protocol/service.cpp` | `eeae5deaec1764f4eab7b5bab076e4c9d59ae33697a45d0f5d624bbcb80908d8` | `11f753c6aab7a6d14030f1877f6504cd46ab6aa8be1503995f58e21ee9d944f3` |
+| `Firmware/Rehab/scripts/bench.py` | `ca7afe0c0b16d338d2be4c55a290ff7b7ddde1b672d6424c8677f140cb64d6dc` | `56ea1abe1bffda48c30b9b5c6302dc4af8c03c7642667987c212b9903ed8498a` |
