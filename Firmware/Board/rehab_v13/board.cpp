@@ -458,7 +458,10 @@ void ControlLoop_IRQHandler(void) {
     // disarming and when the motor spins fast in idle). Passing an invalid
     // current reading would create problems with starting FOC.
     if (!(TIM1->BDTR & TIM_BDTR_MOE_Msk)) {
-        current0 = {0.0f, 0.0f};
+        // current_meas_cb subtracts DC_calib_ from this pre-compensation sample.
+        // Encode the assumed zero current in that domain, not as raw zero.
+        // This is not a physical measurement; the separate DC sample stays real.
+        current0 = motors[0].DC_calib_;
     }
     motors[0].current_meas_cb(timestamp - TIM1_INIT_COUNT, current0);
 
@@ -489,6 +492,9 @@ void ControlLoop_IRQHandler(void) {
         return;
     }
 
+    // Never reuse the synthetic measurement as a DC-calibration sample if
+    // the independent ADC conversion or gate-driver readiness is invalid.
+    current0.reset();
     if (!fetch_and_reset_adcs(&current0, true)) {
         motors[0].disarm_with_error(Motor::ERROR_BAD_TIMING);
     }

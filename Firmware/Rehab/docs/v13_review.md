@@ -293,3 +293,12 @@ Only these individually reviewed hashes/deletions are registered:
 | `Firmware/Rehab/platform/bench_native.hpp` | `7250be3972a87992009f8fe46a8cebd9a7c7ecf8c21ba121c19d11ca98f0a239` | deleted |
 | `Firmware/Rehab/platform/bench_session.hpp` | `0cc5452f1a6b6980ce5eacf4585ac4cdfe9b4eeda4c6f112db8da3df5aa56a15` | deleted |
 | `Firmware/Rehab/scripts/bench.py` | `56ea1abe1bffda48c30b9b5c6302dc4af8c03c7642667987c212b9903ed8498a` | deleted |
+
+
+## 2026-11-04: PWM-disabled synthetic current correction
+
+V1.3 board only: encode assumed zero as DC_calib_ before native offset subtraction. Reset current0 before the independent DC ADC fetch so invalid conversions cannot reuse a synthetic sample. No native motor algorithms, protection limits, protocols or other board targets changed.
+
+Independent reviewer idle_current_review approved startup two-sample behavior, MOE transitions, real overcurrent protection and DC sample isolation. Host tests execute extracted production compensation/protection logic; invalid DC-fetch paths are source-reviewed, not a full HAL simulation. Hardware calibration/regeneration remains unverified.
+
+Only reviewed board hash updated: 207acffec3f0b23eec5a37f2769886eaf8c3e116d22ab9e40ba6bfa8c245b558 -> eed88c9c0aade0099d54b521e4b130a0bdfb23154d976d0a152fe7fccd8d8d9e. Historical archives and all other reviewed hashes preserved.
