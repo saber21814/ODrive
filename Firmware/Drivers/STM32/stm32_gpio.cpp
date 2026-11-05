@@ -212,9 +212,6 @@ void EXTI3_IRQHandler(void) {
 
 /** @brief Entrypoint for the EXTI line 4 interrupt. */
 void EXTI4_IRQHandler(void) {
-#if defined(REHAB_V13)
-    rehab::platform::ScopedIsrTiming isr_timing(REHAB_ISR_EXTI9_5);
-#endif
     maybe_handle(4);
 }
 

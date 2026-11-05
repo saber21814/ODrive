@@ -135,7 +135,7 @@ def specifications(quick):
         "REHAB_ENABLE_STATISTICS=1", "REHAB_ENABLE_TRAINING=1",
         "REHAB_ENABLE_COMPENSATION=1", "REHAB_STAGE=6",
     ]
-    for board, real_motor in itertools.product(('v12','v13'), (0,1)):
+    for board, real_motor in itertools.product(('v12',), (0,1)):
         suites.append(suite(
             ("runtime" if not real_motor else "runtime_real_flag")+('_v13' if board=='v13' else ''),
             ["Tests/rehab/runtime_tests.cpp", "Rehab/platform/isr_timing.cpp"] + SERVICE,
@@ -150,24 +150,13 @@ def specifications(quick):
             ],
         ))
 
-    network_runtime = next(s for s in suites if s['name'] == 'runtime_v13').copy()
-    network_runtime['name'] = 'runtime_network_v13'
-    network_runtime['definitions'] = [d.replace('REHAB_ENABLE_NETWORK=0', 'REHAB_ENABLE_NETWORK=1')
-                                      for d in network_runtime['definitions']]
-    network_runtime['notes'] = network_runtime['notes'] + [
-        'Actual SetNetwork admission and wire response; CH394 transport is a disconnected host carrier.']
-    suites.append(network_runtime)
-    native_runtime=network_runtime.copy()
-    native_runtime['name']='runtime_native_v13'
-    replacements={'REHAB_ENABLE_APPLICATION=1':'REHAB_ENABLE_APPLICATION=0',
-                  'REHAB_ENABLE_HX711=0':'REHAB_ENABLE_HX711=1','REHAB_STAGE=6':'REHAB_STAGE=2',
-                  'REHAB_ENABLE_TRAINING=1':'REHAB_ENABLE_TRAINING=0',
-                  'REHAB_ENABLE_STATISTICS=1':'REHAB_ENABLE_STATISTICS=0',
-                  'REHAB_ENABLE_COMPENSATION=1':'REHAB_ENABLE_COMPENSATION=0'}
-    native_runtime['definitions']=[replacements.get(d,d) for d in network_runtime['definitions']]
-    native_runtime['sources']=['Tests/rehab/native_runtime_tests.cpp','Rehab/platform/isr_timing.cpp']+SERVICE
-    native_runtime['notes']=['Actual peripheral/native interface gates; hardware and native motor algorithms are carriers, not physical acceptance.']
-    suites.append(native_runtime)
+    peripheral_sources=["Rehab/protocol/frame.cpp","Rehab/protocol/peripheral_service.cpp"]
+    suites.append(suite("peripheral_service",peripheral_sources+["Tests/rehab/peripheral_service_tests.cpp"],production=peripheral_sources))
+    suites.append(suite("runtime_native_v13",["Tests/rehab/native_runtime_tests.cpp"]+peripheral_sources,
+        flags=GNU_STRICT,definitions=["REHAB_V12=1","REHAB_V13=1","REHAB_ENABLE_PROTOCOL=1","REHAB_ENABLE_NETWORK=1","REHAB_ENABLE_HX711=1","REHAB_STAGE=2"],
+        includes=["Tests/rehab/runtime_mocks","Tests/rehab/driver_mocks","Drivers/STM32","fibre-cpp/include","."],
+        production=peripheral_sources+["Rehab/platform/runtime_v13.cpp"],
+        notes=["Actual V13 runtime, mocked hardware; STOP/native configuration/transport isolation, no physical acceptance."]))
 
     suites.append(suite(
         "native_ingress", ["Tests/rehab/ingress_tests.cpp", "Rehab/platform/isr_timing.cpp"] + SERVICE,
@@ -199,9 +188,6 @@ def specifications(quick):
             notes=["Actual ConfigManager and CRC implementation with an in-memory NVM carrier; tests two-pass persistence, version-specific CRC seeds, truncation, corruption and interrupted writes."],
         ))
 
-    suites.append(suite('phase_adc_monitor',['Tests/rehab/phase_adc_monitor_tests.cpp'],
-        production=['Rehab/platform/phase_adc_monitor.hpp'],
-        notes=['DC ADC observer packing and stale/invalid handling; no physical current qualification.']))
     suites.append(suite('temperature_v13',['Tests/rehab/temperature_tests.cpp'],
         definitions=['REHAB_V13=1'],production=['Rehab/platform/temperature.hpp','Rehab/platform/commissioning.hpp']))
     suites.append(suite('v13_gate',['Tests/rehab/v13_gate_tests.cpp'],

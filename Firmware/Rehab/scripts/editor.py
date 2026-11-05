@@ -27,7 +27,7 @@ def write_json(path, value):
 
 def capture(board='v12', profile='full'):
     """Call after the selected build, before restoring tup.config."""
-    if profile not in ('full', 'peripherals') or (profile=='peripherals' and board!='v13'):
+    if (board, profile) not in (('v12', 'full'), ('v13', 'peripherals')):
         raise RuntimeError('Unsupported editor profile')
     global EDITOR
     EDITOR=ROOT/('build/rehab/v13/peripherals/editor' if profile=='peripherals' else

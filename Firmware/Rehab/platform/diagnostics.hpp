@@ -1,10 +1,6 @@
 #pragma once
 #include <autogen/interfaces.hpp>
 #include "runtime.hpp"
-#if defined(REHAB_V13)
-uint32_t rehab_board_capture_arm();
-uint32_t rehab_board_capture_word(uint32_t index);
-#endif
 namespace rehab { namespace platform {
 class Diagnostics : public RehabStatusIntf {
 public:
@@ -72,8 +68,6 @@ public:
     uint32_t get_isr_spi_rx_count() const { return diagnostic_word(61); }
     uint32_t get_isr_stop_count() const { return diagnostic_word(62); }
 #if defined(REHAB_V13)
-    uint32_t cal_capture_arm() { return rehab_board_capture_arm(); }
-    uint32_t cal_capture_word(uint32_t index) { return rehab_board_capture_word(index); }
     uint32_t get_board_revision() const { return diagnostic_word(63); }
     uint32_t get_network_spi_bus() const { return diagnostic_word(64); }
     uint32_t get_native_spi_bus() const { return diagnostic_word(65); }
@@ -88,10 +82,6 @@ public:
     uint32_t get_brake_settled_path() const { return diagnostic_word(74); }
     uint32_t get_software_brake_enabled() const { return diagnostic_word(75); }
     uint32_t get_hardware_stop_brake_present() const { return diagnostic_word(76); }
-    uint32_t get_isr_spi1_tx_max_cycles() const { return diagnostic_word(77); }
-    uint32_t get_isr_spi1_rx_max_cycles() const { return diagnostic_word(78); }
-    uint32_t get_isr_spi1_tx_count() const { return diagnostic_word(79); }
-    uint32_t get_isr_spi1_rx_count() const { return diagnostic_word(80); }
     float get_aux_temperature_c() const { return diagnostic_float(10); }
     uint32_t get_network_snapshot_sequence() const { return diagnostic_word(81); }
     uint32_t get_network_failed_state() const { return diagnostic_word(82); }
@@ -106,10 +96,6 @@ public:
     uint32_t get_network_mode_reg() const { return diagnostic_word(91); }
     uint32_t get_network_chip_config() const { return diagnostic_word(92); }
     uint32_t get_network_reg_page() const { return diagnostic_word(93); }
-    uint32_t get_phase_adc_sequence() const { return diagnostic_word(94); }
-    uint32_t get_phase_adc_packed() const { return diagnostic_word(95); }
-    uint32_t get_phase_adc_age_ms() const { return diagnostic_word(96); }
-    uint32_t get_phase_adc_errors() const { return diagnostic_word(97); }
 #endif
     float get_length_m() const { return diagnostic_float(0); }
     float get_speed_m_s() const { return diagnostic_float(1); }

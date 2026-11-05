@@ -15,6 +15,8 @@ PROFILES = ['baseline', 'native', 'hx711', 'network', 'peripherals', 'protection
 
 def inspect(name,board='v12',folder=None):
     if name not in PROFILES or board not in ('v12','v13'): raise RuntimeError('Unsupported resource profile or board')
+    if board=='v13' and name not in ('baseline','peripherals'):
+        raise RuntimeError('V1.3 supports only peripherals; application/test profiles are retired')
     folder = folder if folder is not None else (OUT/'v13' if board=='v13' and name!='baseline' else OUT)/name
     elf = folder/'ODriveFirmware.elf'
     sections = subprocess.check_output(['arm-none-eabi-size', '-A', str(elf)], text=True)
@@ -33,9 +35,19 @@ def inspect(name,board='v12',folder=None):
     if ('rehab::drivers::Hx711::poll' in symbols) != hx: errors.append('HX711 feature/symbol mismatch')
     if ('network_main(' in symbols) != network: errors.append('Network task feature/symbol mismatch')
     if not v12 and 'rehab::platform::' in symbols: errors.append('Rehab runtime linked into original board')
+    telemetry = v12 and board=='v12'
     for function in ('rehab_isr_begin','rehab_isr_end','rehab_isr_max_cycles','rehab_isr_count'):
-        if bool(re.search(r'\b'+function+r'$',symbols,re.M)) != v12:
+        if bool(re.search(r'\b'+function+r'$',symbols,re.M)) != telemetry:
             errors.append('ISR telemetry feature/symbol mismatch: '+function)
+    if v12 and board=='v13':
+        for retired in ('rehab::Engine::', 'rehab::capture::', 'rehab_board_capture_',
+                        'rehab_board_phase_adc_', 'PhaseAdcMonitor', 'rehab::bench::'):
+            if retired in symbols: errors.append('Retired V1.3 implementation linked: '+retired)
+        link_map = (folder/'ODriveFirmware.map').read_text(encoding='utf-8', errors='replace')
+        if '_MotorControl_motorcpp.o' not in link_map:
+            errors.append('Original motor.cpp object missing from V1.3 link map')
+        if 'motor_v13_capture' in link_map:
+            errors.append('Instrumented motor copy remains in V1.3 link map')
     command_queue = re.search(r'^([0-9a-f]+)\s+([0-9a-f]+)\s+b\s+rehab::platform::\(anonymous namespace\)::commands$',symbols,re.M)
     if bool(command_queue) != network: errors.append('Structured command queue/protocol feature mismatch')
     command_bytes=int(command_queue[2],16) if command_queue else 0
@@ -73,7 +85,7 @@ def inspect(name,board='v12',folder=None):
     return {'profile': name, 'flash_bytes': flash, 'sram_reserved_bytes': sram,
         'sram_unreserved_bytes': 128*1024-sram, 'ccm_rtos_heap_bytes': ccm,
         'safety_task_stack_bytes': 6144 if v12 else 0, 'network_task_stack_bytes': 3072 if network else 0,
-        'structured_command_queue_bytes':command_bytes,'isr_telemetry_linked':v12,
+        'structured_command_queue_bytes':command_bytes,'isr_telemetry_linked':telemetry,
         'dma': dma, 'sections': sec, 'errors': errors, 'build': build}
 
 
@@ -82,7 +94,10 @@ def main():
     p.add_argument('profile', choices=PROFILES+['all'], default='all', nargs='?')
     p.add_argument('--board',choices=['v12','v13'],default='v12')
     a=p.parse_args()
-    reports=[inspect(name,a.board) for name in PROFILES if a.profile==name or a.profile=='all']
+    profiles = ['baseline','peripherals'] if a.board=='v13' else PROFILES
+    if a.profile!='all' and a.profile not in profiles:
+        p.error('Unsupported profile for selected board')
+    reports=[inspect(name,a.board) for name in profiles if a.profile==name or a.profile=='all']
     destination=OUT/'v13' if a.board=='v13' else OUT
     destination.mkdir(parents=True,exist_ok=True)
     (destination/'resources.json').write_text(json.dumps(reports, indent=2)+'\n', encoding='utf-8')

@@ -6,8 +6,7 @@ FLOATS = ["length_m","speed_m_s","force_n","target_torque_nm","power_w","positiv
 V13_WORDS = ['board_revision','network_spi_bus','native_spi_bus','native_spi_timeouts',
     'native_spi_errors','native_spi_rejected','native_spi_highwater','native_spi_quarantined',
     'gate_ready','gate_generation','physical_stop','brake_settled_path',
-    'software_brake_enabled','hardware_stop_brake_present','isr_spi1_tx_max_cycles',
-    'isr_spi1_rx_max_cycles','isr_spi1_tx_count','isr_spi1_rx_count']
+    'software_brake_enabled','hardware_stop_brake_present']
 p=argparse.ArgumentParser();p.add_argument('--output',required=True)
 p.add_argument('--board',choices=['v12','v13'],default='v12');a=p.parse_args()
 root=pathlib.Path(__file__).resolve().parents[1]
@@ -30,14 +29,6 @@ if a.board=='v13':
         'network_sn_sta','network_sn_port','network_phy_cfg','network_mode_reg',
         'network_chip_config','network_reg_page']
     attrs.update({n:{'type':'readonly uint32','c_getter':'get_'+n+'()'} for n in timeout_words})
-    # Append DC ADC observer fields; no changes to framed Diagnostics.
-    adc_words = ['phase_adc_sequence','phase_adc_packed','phase_adc_age_ms','phase_adc_errors']
-    attrs.update({n:{'type':'readonly uint32','c_getter':'get_'+n+'()'} for n in adc_words})
 intfs['RehabStatus']={'c_is_class':True,'attributes':attrs}
-if a.board=='v13':
-    intfs['RehabStatus']['functions'] = {
-        'cal_capture_arm': {'out': {'result': 'uint32'}},
-        'cal_capture_word': {'in': {'index': 'uint32'}, 'out': {'value': 'uint32'}},
-    }
 data['valuetypes']['ODrive.StreamProtocolType']['values']['Rehab']={'doc':'Exclusive framed rehabilitation protocol. No ASCII or stdout on this stream.'}
 pathlib.Path(a.output).write_text(yaml.safe_dump(data,sort_keys=False,allow_unicode=True),encoding='utf-8')

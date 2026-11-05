@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "Rehab/drivers/raw_sample.hpp"
 
 #ifndef REHAB_ENABLE_TRAINING
 #define REHAB_ENABLE_TRAINING 1
@@ -85,11 +86,6 @@ struct Feedback {
     float position_turns = 0.0f, velocity_turns_s = 0.0f;
     float torque_nm = 0.0f, current_a = 0.0f, vbus_v = 0.0f;
     bool idle = true, armed = false, native_fault = false, stop = false;
-};
-struct ForceSample {
-    uint32_t sequence = 0, timestamp_us = 0;
-    int32_t raw = 0;
-    bool valid = false;
 };
 struct Target {
     uint32_t sequence = 0, epoch = 0, created_us = 0;

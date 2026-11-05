@@ -1,7 +1,9 @@
 #pragma once
 // Revision-specific hardware access. REHAB_V12 is the shared integration ABI;
 // REHAB_V13 additionally selects the independent V1.3 board implementation.
+#if !defined(REHAB_V13)
 #include "commissioning.hpp"
+#endif
 #include <stm32_spi_arbiter.hpp>
 #include <stm32_gpio.hpp>
 
@@ -11,7 +13,6 @@ bool rehab_board_gate_ready();
 uint32_t rehab_board_gate_generation();
 void rehab_board_service_spi(uint32_t now_ms);
 Stm32SpiArbiter::Diagnostics rehab_board_native_spi_diagnostics();
-uint32_t rehab_board_phase_adc_word(unsigned index);
 #endif
 
 namespace rehab { namespace platform { namespace board_access {

@@ -1,5 +1,5 @@
 #pragma once
-#include "Rehab/core/engine.hpp"
+#include "raw_sample.hpp"
 
 namespace rehab { namespace drivers {
 class Hx711 {

@@ -131,31 +131,17 @@ class ProjectEntryTests(unittest.TestCase):
         self.report.update(profile='full', native_control=False, real_motor_enabled=False,
                            motion_policy='rehab_inhibited')
         self.write_report()
-        self.assertEqual(self.validate('full'), self.folder/'ODriveFirmware.elf')
+        with self.assertRaises(RuntimeError): self.validate('full')
         with self.assertRaises(RuntimeError): self.validate('peripherals')
         self.report['real_motor_enabled']=True;self.write_report()
         with self.assertRaises(RuntimeError): self.validate('full')
 
     def test_retired_profile_rejected_before_lock_or_program(self):
-        for profile in ('bench','bad'):
+        for profile in ('bench','bad','full','training','statistics'):
             with patch.object(project, 'project_lock') as lock:
                 with self.assertRaises(RuntimeError): project.execute('flash', profile=profile)
                 lock.assert_not_called()
             with self.assertRaises(RuntimeError): self.validate(profile)
-
-    def test_explicit_full_target_and_dry_run(self):
-        for dry_run in (True,False):
-            with patch.object(project, 'project_lock', contextlib.nullcontext), \
-                    patch.object(project, 'run_guard'), \
-                    patch.object(project.firmware_build, 'build') as build, \
-                    patch.object(project, 'validate') as validate, \
-                    patch.object(project.subprocess, 'run') as programmer, \
-                    contextlib.redirect_stdout(io.StringIO()):
-                project.execute('flash', dry_run=dry_run, profile='full')
-                build.assert_called_once_with('full', jobs=1, board='v13')
-                validate.assert_called_once_with(project.FW/'build/rehab/v13/full',profile='full')
-                if dry_run: programmer.assert_not_called()
-                else: self.assertIn('verify_image {build/rehab/v13/full/ODriveFirmware.elf}', programmer.call_args.args[0])
 
     def test_cli_and_vscode_default_target(self):
         with patch.object(project.sys, 'argv', ['project.py','check']), patch.object(project, 'execute') as execute:

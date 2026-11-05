@@ -356,3 +356,21 @@ Explicit reviewed manifest delta (no baseline refresh):
 User requested removal of diagnostic negative-current freeze. Independent capture_review APPROVED; only Motor/System error words now trigger reason 2, with existing end snapshot reason 3 retained. Header word 8 and legacy reason 1 decoding kept compatible. Tests passed: recorder regression (negative history continues; model-invalid current-limit event retains ADC/current), eight instrument equivalence tests, eighteen FOCV1.9 offline tests. No hardware access, firmware build or flash. No native algorithm/protection edits. Only these two reviewed hashes updated; history unchanged:
 - Rehab/platform/calibration_capture.cpp: c33ef3e8eb84a6637cad28848ba6572e4875b408ede53f90318c0b16bce00564
 - Rehab/platform/calibration_capture.hpp: 480151db5896ff10de25017f44b8afb60b2a79a46d5409bc3339534e5b46e648
+
+
+## 2026-11-05: V1.3 native motor + peripheral-only cleanup
+
+Approved user plan implemented from 897078d5 (FOCV2.1). Independent `cleanup_review` inspected actual source diff and approved after fixes to command rejection accounting and admission-time replay. New peripheral service passed 189 host checks; actual V1.3 runtime with hardware carriers passed 62 checks, including STOP lock/explicit recovery, native writes/state admission, no controller/watchdog interference, queued network config invalidation and disconnect isolation. Original, V1.2 full and V1.3 peripherals ARM builds plus ELF/resource checks passed. No device connection, flash or motor run.
+
+Native MotorControl algorithms, original DRV8301 source, original board and V1.2 board files are unchanged. V1.2 shared Engine remains for compatibility; it is absent from V1.3 link inputs/symbols. V1.3 uses original motor.cpp, no generated instrumented copy. ADC idle compensation fix and real ADC reset remain. Original protections and defaults are unchanged, including V1.3 OV default 0V (must be explicitly configured before testing).
+
+Explicit reviewed delta: [v13_cleanup_hash_delta.json](v13_cleanup_hash_delta.json). Only listed changed/new files registered; deleted diagnostic entries removed. Neither immutable history archive nor guard allowlist was altered. Retained legacy reports/logs are evidence, not current instructions. See [current cleanup/interface contract](v13_cleanup.md).
+
+Reviewed critical SHA256:
+- runtime_v13.cpp: 6669baf14cde26146e7f8133248e0a0942f73ebd60d96ffc47f74f17e0ae4e5e
+- peripheral_service.cpp: 5068a1b281a444de04056376440c8203564349a7af9898a01c32bb3109f00ec1
+- Board/rehab_v13/board.cpp: 19a8e331bb85ff38150e8b83bba946a05b8e675b2c0a0c879ff71b526fae4647
+
+This cleanup does not establish the electrical cause of current jumps or qualify the motor/power stage.
+
+Final post-registration host regression: 47 suites passed, 0 failed, 1 skipped (--quick upstream native suite). Final project check passed; ELF SHA256 3f5cbc5a4ef022af7847b3b7dfdf144cae1b1ff9b28fe7d177c61c2b24e2a5d6. No hardware accessed.

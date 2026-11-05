@@ -401,18 +401,27 @@ if boardversion == 'rehab-v1.2' or boardversion == 'rehab-v1.3' then
             odrive_firmware_pkg.code_files[i] = 'Rehab/drivers/spi_arbiter.cpp'
         end
     end
+    local extra_sources
     if boardversion == 'rehab-v1.3' then
-        -- V1.3-only generated observation copy; native motor.cpp stays untouched.
-        for i, name in ipairs(odrive_firmware_pkg.code_files) do
-            if name == 'MotorControl/motor.cpp' then
-                odrive_firmware_pkg.code_files[i] = 'autogen/motor_v13_capture.cpp'
+        -- One V1.3 target: native control plus basic peripherals, no application.
+        if tup.getconfig('REHAB_STAGE') ~= '2' or
+           tup.getconfig('REHAB_HX711') ~= 'true' or
+           tup.getconfig('REHAB_NETWORK') ~= 'true' or
+           tup.getconfig('REHAB_PROTOCOL') ~= 'true' then
+            error('V1.3 supports only the peripherals profile')
+        end
+        for _, option in ipairs({'APPLICATION', 'TRAINING', 'STATISTICS', 'COMPENSATION', 'REAL_MOTOR'}) do
+            if tup.getconfig('REHAB_'..option) == 'true' then
+                error('V1.3 application/test options are retired: '..option)
             end
         end
-        table.insert(odrive_firmware_pkg.code_files, 'Rehab/platform/calibration_capture.cpp')
+        extra_sources = {'Rehab/protocol/frame.cpp', 'Rehab/protocol/peripheral_service.cpp',
+            'Rehab/platform/runtime_v13.cpp', 'Rehab/platform/stream.cpp'}
+    else
+        extra_sources = {'Rehab/core/engine.cpp', 'Rehab/protocol/frame.cpp',
+            'Rehab/protocol/config_fields.cpp', 'Rehab/protocol/service.cpp',
+            'Rehab/platform/runtime.cpp', 'Rehab/platform/stream.cpp', 'Rehab/platform/isr_timing.cpp'}
     end
-    local extra_sources = {'Rehab/core/engine.cpp', 'Rehab/protocol/frame.cpp',
-        'Rehab/protocol/config_fields.cpp', 'Rehab/protocol/service.cpp',
-        'Rehab/platform/runtime.cpp', 'Rehab/platform/stream.cpp', 'Rehab/platform/isr_timing.cpp'}
     for _, name in ipairs(extra_sources) do table.insert(odrive_firmware_pkg.code_files, name) end
     if tup.getconfig('REHAB_HX711') == 'true' then table.insert(odrive_firmware_pkg.code_files, 'Rehab/drivers/hx711.cpp') end
     if tup.getconfig('REHAB_NETWORK') == 'true' then table.insert(odrive_firmware_pkg.code_files, 'Rehab/drivers/ch394.cpp') end
@@ -461,12 +470,6 @@ end
 
 python_command = find_python3()
 print('Using python command "'..python_command..'"')
-if boardversion == 'rehab-v1.3' then
-    tup.frule{inputs={'MotorControl/motor.cpp', 'Rehab/scripts/instrument_calibration.py'},
-        command=python_command..' Rehab/scripts/instrument_calibration.py --input MotorControl/motor.cpp --output %o',
-        outputs='autogen/motor_v13_capture.cpp'}
-end
-
 -- TODO: use CI to verify that on PRs the enums.py file is consistent with the YAML.
 -- Note: we currently check this file into source control for two reasons:
 --  - Don't require tup to run in order to use odrivetool from the repo

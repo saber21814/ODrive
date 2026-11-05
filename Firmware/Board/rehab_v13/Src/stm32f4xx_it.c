@@ -39,7 +39,6 @@
 
 /* USER CODE BEGIN 0 */
 #include <Drivers/STM32/stm32_system.h>
-#include <Rehab/platform/isr_timing.h>
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
@@ -219,7 +218,6 @@ void SysTick_Handler(void)
 */
 void DMA1_Stream0_IRQHandler(void)
 {
-  const uint32_t isr_started = rehab_isr_begin();
   /* USER CODE BEGIN DMA1_Stream0_IRQn 0 */
   COUNT_IRQ(DMA1_Stream0_IRQn);
   /* USER CODE END DMA1_Stream0_IRQn 0 */
@@ -227,7 +225,6 @@ void DMA1_Stream0_IRQHandler(void)
   /* USER CODE BEGIN DMA1_Stream0_IRQn 1 */
 
   /* USER CODE END DMA1_Stream0_IRQn 1 */
-  rehab_isr_end(REHAB_ISR_SPI_DMA_RX, isr_started);
 }
 
 
@@ -267,7 +264,6 @@ void DMA1_Stream6_IRQHandler(void)
 */
 void DMA1_Stream7_IRQHandler(void)
 {
-  const uint32_t isr_started = rehab_isr_begin();
   /* USER CODE BEGIN DMA1_Stream7_IRQn 0 */
   COUNT_IRQ(DMA1_Stream7_IRQn);
   /* USER CODE END DMA1_Stream7_IRQn 0 */
@@ -275,7 +271,6 @@ void DMA1_Stream7_IRQHandler(void)
   /* USER CODE BEGIN DMA1_Stream7_IRQn 1 */
 
   /* USER CODE END DMA1_Stream7_IRQn 1 */
-  rehab_isr_end(REHAB_ISR_SPI_DMA_TX, isr_started);
 }
 
 /**
@@ -385,17 +380,13 @@ void SPI1_IRQHandler(void) {
 }
 
 void DMA2_Stream2_IRQHandler(void) {
-  const uint32_t started = rehab_isr_begin();
   COUNT_IRQ(DMA2_Stream2_IRQn);
   HAL_DMA_IRQHandler(&hdma_spi1_rx);
-  rehab_isr_end(REHAB_ISR_SPI1_DMA_RX, started);
 }
 
 void DMA2_Stream3_IRQHandler(void) {
-  const uint32_t started = rehab_isr_begin();
   COUNT_IRQ(DMA2_Stream3_IRQn);
   HAL_DMA_IRQHandler(&hdma_spi1_tx);
-  rehab_isr_end(REHAB_ISR_SPI1_DMA_TX, started);
 }
 
 /* USER CODE BEGIN 1 */

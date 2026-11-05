@@ -23,10 +23,12 @@ class ProjectProfilesTests(unittest.TestCase):
     def test_retired_profile_rejected_before_writing(self):
         with patch.object(build, 'OUT') as out:
             with self.assertRaises(RuntimeError): build.build('bench',board='v12')
+            for profile in ('native','hx711','network','protection','training','statistics','full'):
+                with self.assertRaises(RuntimeError): build.build(profile,board='v13')
             out.mkdir.assert_not_called()
 
     def test_profile_isolation_report_and_config_restore(self):
-        for profile,board in [('peripherals','v13'),('peripherals','v12'),('full','v13'),('full','v12'),('baseline','v12')]:
+        for profile,board in [('peripherals','v13'),('peripherals','v12'),('full','v12'),('baseline','v12')]:
             with self.subTest(profile=profile,board=board), tempfile.TemporaryDirectory(dir=self.temp_root) as tmp:
                 root=pathlib.Path(tmp);out=root/'build/rehab';out.mkdir(parents=True)
                 (root/'autogen').mkdir()
@@ -71,6 +73,7 @@ class ProjectProfilesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=self.temp_root) as tmp:
             folder=pathlib.Path(tmp)
             (folder/'endpoints.hpp').write_text('rehab board_revision hardware_locked')
+            (folder/'ODriveFirmware.map').write_text('build/obj/_MotorControl_motorcpp.o')
             report={'status':'passed','board':'v13','profile':'peripherals','native_control':True,
                     'real_motor_enabled':True,'motion_policy':'native_board_control','source_sha256':'src'}
             symbols='''20000100 00000010 b spi1_arbiter
@@ -80,10 +83,6 @@ class ProjectProfilesTests(unittest.TestCase):
 08000140 00000010 T rehab::drivers::Hx711::poll(unsigned long)
 08000160 00000010 V vtable for V13GateDriver
 08000180 00000010 T V13GateDriver::is_ready()
-080001a0 00000010 T rehab_isr_begin
-080001c0 00000010 T rehab_isr_end
-080001e0 00000010 T rehab_isr_max_cycles
-08000200 00000010 T rehab_isr_count
 '''
             def inspect(text, profile='peripherals'):
                 (folder/'build.json').write_text(json.dumps(report))
@@ -96,12 +95,17 @@ class ProjectProfilesTests(unittest.TestCase):
             report['native_control']=True;report['real_motor_enabled']=1
             self.assertIn('Artifact motor capability mismatch',inspect(symbols))
             report.update(profile='full',native_control=False,real_motor_enabled=False,motion_policy='rehab_inhibited')
-            self.assertEqual(inspect(symbols,'full'),[])
+            with self.assertRaises(RuntimeError): inspect(symbols,'full')
+            report.update(profile='peripherals', native_control=True, real_motor_enabled=True, motion_policy='native_board_control')
+            for retired in ('rehab::Engine::update', 'rehab::capture::recorder', 'rehab_board_capture_arm', 'rehab_isr_begin'):
+                self.assertTrue(inspect(symbols+'08000200 00000010 T '+retired+'\n'))
+            (folder/'ODriveFirmware.map').write_text('autogen/motor_v13_capture.cpp')
+            self.assertIn('Original motor.cpp object missing from V1.3 link map', inspect(symbols))
         with self.assertRaises(RuntimeError): resources.inspect('bench','v12')
 
     def test_editor_profile_contract(self):
         import sqlite3
-        for profile in ('full','peripherals'):
+        for profile in ('peripherals',):
             with tempfile.TemporaryDirectory(dir=self.temp_root) as tmp:
                 root=pathlib.Path(tmp); (root/'.tup').mkdir(); (root/'autogen').mkdir()
                 for name in editor.HEADER_NAMES:

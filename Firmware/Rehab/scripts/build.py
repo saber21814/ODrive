@@ -37,7 +37,6 @@ def source_digest():
     for directory in ('Board', 'Rehab', 'MotorControl', 'Drivers', 'communication', 'fibre-cpp'):
         paths += [p for p in (ROOT/directory).rglob('*') if p.is_file() and p.suffix in ('.c','.cpp','.h','.hpp','.j2','.lua','.ld','.s','.yaml')]
     paths += [ROOT/'Tupfile.lua', ROOT/'odrive-interface.yaml', ROOT/'Rehab/interface.py']
-    paths += [ROOT/'Rehab/scripts/instrument_calibration.py']
     for path in sorted(set(paths)):
         digest.update(path.relative_to(ROOT).as_posix().encode());digest.update(path.read_bytes())
     return digest.hexdigest()
@@ -45,6 +44,8 @@ def source_digest():
 def build(profile, jobs=1, board='v12'):
     if profile not in ('baseline', *PROFILES) or board not in ('v12', 'v13'):
         raise RuntimeError('Unsupported build profile or board')
+    if board == 'v13' and profile not in ('baseline', 'peripherals'):
+        raise RuntimeError('V1.3 supports only peripherals; application/test profiles are retired')
     OUT.mkdir(parents=True, exist_ok=True)
     dest = (OUT / 'v13' if board == 'v13' and profile != 'baseline' else OUT) / profile
     dest.mkdir(parents=True, exist_ok=True)
@@ -120,6 +121,7 @@ if __name__ == '__main__':
     a=p.parse_args()
     try:
         if a.recover_config: recover_config()
-        for name in ['baseline',*PROFILES] if a.profile=='all' else [a.profile]: build(name,a.jobs,a.board)
+        profiles = ['baseline', 'peripherals'] if a.board=='v13' else ['baseline', *PROFILES]
+        for name in profiles if a.profile=='all' else [a.profile]: build(name,a.jobs,a.board)
     except (RuntimeError,subprocess.CalledProcessError) as e:
         print(e,file=sys.stderr);sys.exit(1)

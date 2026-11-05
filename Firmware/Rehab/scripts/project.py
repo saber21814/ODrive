@@ -25,7 +25,7 @@ def run_guard():
 
 def validate(folder=ARTIFACTS, profile='peripherals'):
     """Reject failed, mismatched, stale or modified output before programmer launch."""
-    if profile not in ('peripherals', 'full'): raise RuntimeError('Unsupported project profile')
+    if profile != 'peripherals': raise RuntimeError('Unsupported project profile')
     report = json.loads((folder / 'build.json').read_text(encoding='utf-8'))
     native = profile == 'peripherals'
     required = {'status': 'passed', 'board': 'v13', 'profile': profile,
@@ -93,9 +93,9 @@ def project_lock():
 
 def execute(action, dry_run=False, serial='', profile='peripherals'):
     # Reject malformed parameters before starting a build, with no device access.
-    if action not in ('build', 'check', 'flash') or profile not in ('peripherals', 'full'):
+    if action not in ('build', 'check', 'flash') or profile != 'peripherals':
         raise RuntimeError('Unsupported action/profile')
-    folder = ARTIFACTS if profile == 'peripherals' else FW/'build/rehab/v13/full'
+    folder = ARTIFACTS
     command = programmer_command(folder / 'ODriveFirmware.elf', serial)
     with project_lock():
         run_guard()
@@ -116,7 +116,7 @@ def main():
     parser.add_argument('action', choices=('build', 'check', 'flash'))
     parser.add_argument('--dry-run', action='store_true', help='flash preflight only; never launch OpenOCD')
     parser.add_argument('--serial', default='', help='Optional ST-Link serial number')
-    parser.add_argument('--profile', choices=('peripherals', 'full'), default='peripherals')
+    parser.add_argument('--profile', choices=('peripherals',), default='peripherals')
     args = parser.parse_args()
     try:
         execute(args.action, args.dry_run, args.serial, args.profile)

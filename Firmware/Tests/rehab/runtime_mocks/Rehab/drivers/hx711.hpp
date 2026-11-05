@@ -1,5 +1,5 @@
 #pragma once
-#include "Rehab/core/engine.hpp"
+#include "Rehab/drivers/raw_sample.hpp"
 namespace rehab { namespace drivers {
 // Runtime integration carrier only; actual HX711 timing is tested separately.
 class Hx711 {
