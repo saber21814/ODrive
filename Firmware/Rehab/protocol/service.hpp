@@ -16,6 +16,10 @@ struct Hooks {
     bool (*read_log)(void*,uint32_t&,uint32_t&,uint32_t&)=nullptr;
     void (*command_log)(void*,uint16_t,Result)=nullptr;
     void (*emergency_stop)(void*)=nullptr;
+    // Optional short transaction around fresh application mutations only.
+    // Framing/replay CRC work stays outside; legacy platforms leave these null.
+    Result (*begin_mutation)(void*,uint16_t)=nullptr;
+    void (*end_mutation)(void*)=nullptr;
 };
 class Service {
 public:

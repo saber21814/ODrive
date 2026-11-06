@@ -23,12 +23,12 @@ class ProjectProfilesTests(unittest.TestCase):
     def test_retired_profile_rejected_before_writing(self):
         with patch.object(build, 'OUT') as out:
             with self.assertRaises(RuntimeError): build.build('bench',board='v12')
-            for profile in ('native','hx711','network','protection','training','statistics','full'):
+            for profile in ('native','hx711','network','protection','training','statistics'):
                 with self.assertRaises(RuntimeError): build.build(profile,board='v13')
             out.mkdir.assert_not_called()
 
     def test_profile_isolation_report_and_config_restore(self):
-        for profile,board in [('peripherals','v13'),('peripherals','v12'),('full','v12'),('baseline','v12')]:
+        for profile,board in [('full','v13'),('peripherals','v13'),('peripherals','v12'),('full','v12'),('baseline','v12')]:
             with self.subTest(profile=profile,board=board), tempfile.TemporaryDirectory(dir=self.temp_root) as tmp:
                 root=pathlib.Path(tmp);out=root/'build/rehab';out.mkdir(parents=True)
                 (root/'autogen').mkdir()
@@ -52,13 +52,17 @@ class ProjectProfilesTests(unittest.TestCase):
                 self.assertFalse((out/'recovery.json').exists())
                 self.assertEqual(len(captured),1)
                 config=captured[0]
-                native=profile=='peripherals' and board=='v13'
+                native=profile in ('peripherals','full') and board=='v13'
                 self.assertNotIn('CONFIG_REHAB_BENCH=',config)
                 if profile!='baseline': self.assertIn('CONFIG_REHAB_REAL_MOTOR=false',config)
                 if profile=='peripherals':
                     for option in ('HX711','NETWORK','PROTOCOL'): self.assertIn('CONFIG_REHAB_'+option+'=true',config)
                     for option in ('APPLICATION','TRAINING','STATISTICS','COMPENSATION'): self.assertIn('CONFIG_REHAB_'+option+'=false',config)
                     self.assertIn('CONFIG_REHAB_STAGE=2',config)
+                if profile=='full':
+                    self.assertIn('CONFIG_REHAB_STAGE=6',config)
+                    for option in build.OPTIONS:
+                        self.assertIn('CONFIG_REHAB_'+option+'=true',config)
                 if profile=='full' or native: capture.assert_called_once_with(board,profile)
                 else: capture.assert_not_called()
                 folder=(out/'v13' if board=='v13' and profile!='baseline' else out)/profile
@@ -94,10 +98,17 @@ class ProjectProfilesTests(unittest.TestCase):
             self.assertIn('Artifact native-control mode mismatch',inspect(symbols))
             report['native_control']=True;report['real_motor_enabled']=1
             self.assertIn('Artifact motor capability mismatch',inspect(symbols))
-            report.update(profile='full',native_control=False,real_motor_enabled=False,motion_policy='rehab_inhibited')
-            with self.assertRaises(RuntimeError): inspect(symbols,'full')
+            report.update(profile='full',native_control=True,real_motor_enabled=True,motion_policy='native_board_control')
+            application_symbols=('08000200 00000010 T rehab::Engine::update()\n'
+                                 '08000220 00000010 T rehab::wire::Service::handle()\n')
+            self.assertEqual(inspect(symbols+application_symbols,'full'),[])
+            self.assertTrue(inspect(symbols,'full'))
+            for missing in ('rehab::Engine::','rehab::wire::Service::'):
+                self.assertTrue(inspect(symbols+application_symbols.replace(missing,'missing::'),'full'))
+            for retired in ('rehab::capture::recorder','rehab::bench::test','rehab_isr_begin'):
+                self.assertTrue(inspect(symbols+application_symbols+'08000300 00000010 T '+retired+'\n','full'))
             report.update(profile='peripherals', native_control=True, real_motor_enabled=True, motion_policy='native_board_control')
-            for retired in ('rehab::Engine::update', 'rehab::capture::recorder', 'rehab_board_capture_arm', 'rehab_isr_begin'):
+            for retired in ('rehab::Engine::update', 'rehab::wire::Service::handle', 'rehab::capture::recorder', 'rehab_board_capture_arm', 'rehab_isr_begin'):
                 self.assertTrue(inspect(symbols+'08000200 00000010 T '+retired+'\n'))
             (folder/'ODriveFirmware.map').write_text('autogen/motor_v13_capture.cpp')
             self.assertIn('Original motor.cpp object missing from V1.3 link map', inspect(symbols))
@@ -105,7 +116,7 @@ class ProjectProfilesTests(unittest.TestCase):
 
     def test_editor_profile_contract(self):
         import sqlite3
-        for profile in ('peripherals',):
+        for profile in ('peripherals','full'):
             with tempfile.TemporaryDirectory(dir=self.temp_root) as tmp:
                 root=pathlib.Path(tmp); (root/'.tup').mkdir(); (root/'autogen').mkdir()
                 for name in editor.HEADER_NAMES:

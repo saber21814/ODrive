@@ -1,6 +1,10 @@
-// V1.3 board safety and peripheral service only. No application controller.
+// V1.3 native-first runtime. Training only owns outputs after explicit Acquire.
 #include "runtime.hpp"
+#if REHAB_ENABLE_APPLICATION
+#include "Rehab/protocol/service.hpp"
+#else
 #include "Rehab/protocol/peripheral_service.hpp"
+#endif
 #include "Rehab/protocol/command_queue.hpp"
 #include <odrive_main.h>
 #include <low_level.h>
@@ -14,13 +18,19 @@
 #include <cstring>
 namespace rehab { namespace platform {
 namespace {
+#if !REHAB_ENABLE_APPLICATION
 using Result = wire::PeripheralResult;
-constexpr uint32_t FaultStop=1u, FaultSensor=4u, FaultPlatform=1u<<11;
+constexpr uint32_t FaultStop=1u, FaultPlatform=1u<<11;
+#endif
 ForceSample latest_force;
 uint32_t latched=0,rx_overflow=0,tx_overflow=0,command_overflow=0;
 uint32_t fault_generation=0,rx_highwater=0,disconnect_bits=0;
 bool dispatching_command=false;
 uint32_t dispatch_fault_generation=0;
+#if REHAB_ENABLE_APPLICATION
+uint32_t dispatch_epoch=0,dispatch_transport_generation=0;
+unsigned dispatch_port=3;
+#endif
 osThreadId safety_thread=nullptr;
 float fet_temp=NAN,aux_temp=NAN;
 bool started=false;
@@ -119,6 +129,9 @@ bool quiescent_axis() {
     }
     return false; // A queue without a terminator is not a proven idle state.
 }
+#if REHAB_ENABLE_APPLICATION
+#include "training_v13.hpp"
+#endif
 uint32_t new_session(void*) {
 #if REHAB_ENABLE_PROTOCOL
     // STM32F405 hardware RNG, clocked by the existing 48 MHz PLLQ. Never wait
@@ -156,10 +169,29 @@ Result set_network(void*,const uint8_t* bytes,size_t length) {
 #else
 Result set_network(void*,const uint8_t*,size_t) {return Result::Unsupported;}
 #endif
+#if REHAB_ENABLE_APPLICATION
+wire::Hooks hooks={nullptr,new_session,take_control,release_control,
+    [](void*){return training_ready();},clear_control_faults,set_network,
+    [](void*,unsigned i){return diagnostic_word(i);},read_log,
+    [](void*,uint16_t cmd,Result result){
+        // Cached duplicates bypass command_log and cannot renew the lease.
+        if(cmd==uint16_t(wire::Command::Heartbeat) && result==Result::Ok)owner_heartbeat_us=now_us();
+        if(cmd!=uint16_t(wire::Command::Heartbeat) && cmd!=uint16_t(wire::Command::Status))log(cmd,uint32_t(result));},
+    [](void*){trip(FaultStop);},begin_mutation,end_mutation};
+wire::Service service(engine,hooks);
+#else
 wire::PeripheralHooks hooks={nullptr,new_session,
     [](void*,unsigned i){return diagnostic_word(i);},set_network,
     [](void*){trip(FaultStop);}};
 wire::PeripheralService service(hooks);
+#endif
+void handle_frame(unsigned port,const wire::Frame& frame,wire::Frame& response) {
+#if REHAB_ENABLE_APPLICATION
+    service.handle(port,frame,response,now_us(),capture());
+#else
+    service.handle(port,frame,response);
+#endif
+}
 drivers::Hx711 force_sensor;
 void safety_main(void*) {
     uint32_t tick=xTaskGetTickCount(),last_temp=0;
@@ -174,7 +206,13 @@ void safety_main(void*) {
             const float a=temperature_from_ratio(rehab_board_adc_voltage(board_access::aux_temperature_channel)/3.3f,10000.0f,3950.0f);
             CRITICAL_SECTION(){fet_temp=f;aux_temp=a;}
         }
+#if REHAB_ENABLE_APPLICATION
+        training_update(us);
+#endif
         service_transports();
+#if REHAB_ENABLE_APPLICATION
+        training_publish();
+#endif
         vTaskDelayUntil(&tick,1);
     }
 }
@@ -231,7 +269,8 @@ void start() {
     if(started)return;
     started=true;
 #if REHAB_ENABLE_HX711
-    if(!force_sensor.init(true))trip(FaultSensor);
+    // Missing force acquisition inhibits training, never native motor control.
+    force_sensor.init(true);
 #endif
     osThreadDef(rehab_safety,safety_main,osPriorityAboveNormal,0,6144/sizeof(StackType_t));
     safety_thread=osThreadCreate(osThread(rehab_safety),nullptr);
@@ -245,20 +284,39 @@ void start() {
 void fast_guard() {
     if(stop_asserted())physical_stop(false);
     if(motors[0].is_armed_ && !hardware_ready())trip(FaultPlatform,false);
+#if REHAB_ENABLE_APPLICATION
+    if(owner_session && target.enable && !training_target_valid())trip(FaultTargetExpired,false);
+#endif
 }
-// Legacy integration callsites are retained for V1.2; V1.3 never changes
-// native controller inputs/outputs or feeds its watchdog through these hooks.
+#if REHAB_ENABLE_APPLICATION
+void control_hook() {training_control();}
+void post_controller_hook() {training_post_control();}
+bool motor_may_arm() {
+    return hardware_ready() && (!owner_session || training_target_valid());
+}
+#else
 void control_hook() {}
 void post_controller_hook() {}
 bool motor_may_arm() {return hardware_ready();}
+#endif
 bool brake_may_arm() {return true;}
 void native_clear_faults() {
     CRITICAL_SECTION(){
-        if(quiescent_axis() && !stop_asserted())latched=0;
+        if(quiescent_axis() && !stop_asserted()) {
+#if REHAB_ENABLE_APPLICATION
+            if(owner_session)return;
+            native_clear_requested=true;
+#endif
+            latched=0;
+        }
     }
 }
 bool axis_request_allowed(uint32_t state) {
-    return state==Axis::AXIS_STATE_IDLE || state==Axis::AXIS_STATE_UNDEFINED || motor_may_arm();
+    if(state==Axis::AXIS_STATE_IDLE || state==Axis::AXIS_STATE_UNDEFINED)return true;
+#if REHAB_ENABLE_APPLICATION
+    if(owner_session && state!=Axis::AXIS_STATE_CLOSED_LOOP_CONTROL)return false;
+#endif
+    return motor_may_arm();
 }
 float fet_temperature_c(float) {return fet_temp;}
 void receive_bytes(unsigned port,const uint8_t* bytes,size_t n) {
@@ -290,7 +348,10 @@ void disconnected(unsigned port) {
 #endif
     __atomic_fetch_or(&disconnect_bits,1u<<port,__ATOMIC_RELEASE);
     }
-    // Disconnect invalidates protocol sessions, not native motion requests.
+#if REHAB_ENABLE_APPLICATION
+    // Stop the owner immediately; observer disconnects leave motion untouched.
+    if(owner_session && owner_port==port)trip(FaultHeartbeat,false);
+#endif
 }
 void service_transports() {
 #if REHAB_ENABLE_PROTOCOL
@@ -311,7 +372,11 @@ void service_transports() {
             if(boundary_seen[port]!=boundary_revision) {
                 rx[port].discard_through(rx_boundary[port]);parsers[port].reset();boundary_seen[port]=boundary_revision;
             }
-            ctx.epoch=0;ctx.fault=fault_generation;ctx.generation=transport_generation[port];
+            ctx.epoch=0;
+#if REHAB_ENABLE_APPLICATION
+            ctx.epoch=owner_epoch;
+#endif
+            ctx.fault=fault_generation;ctx.generation=transport_generation[port];
         }
         uint8_t data[64];const auto n=rx[port].read(data,sizeof(data));
         parsers[port].consume(data,n,HAL_GetTick(),[](void* context,const wire::Frame& frame) {
@@ -320,7 +385,7 @@ void service_transports() {
             // STOP bypasses ordinary queue capacity/budget, but never the
             // Service's session, payload and replay validation.
             if(frame.command==uint16_t(wire::Command::Stop)) {
-                service.handle(c.port,frame,response);
+                handle_frame(c.port,frame,response);
                 c.reply(c.port,c.generation,response);return;
             }
             wire::PendingCommand pending;pending.frame=frame;pending.port=c.port;pending.received_us=now_us();
@@ -336,14 +401,27 @@ void service_transports() {
         if(pending.transport_generation!=__atomic_load_n(&transport_generation[port],__ATOMIC_ACQUIRE) ||
            (__atomic_load_n(&disconnect_bits,__ATOMIC_ACQUIRE)&(1u<<port))) {++command_stale;continue;}
         bool stale;
-        CRITICAL_SECTION(){stale=pending.fault_generation!=fault_generation;}
+        CRITICAL_SECTION(){
+            stale=pending.fault_generation!=fault_generation;
+#if REHAB_ENABLE_APPLICATION
+            stale=stale || pending.epoch!=owner_epoch;
+#endif
+        }
         stale=stale || uint32_t(now_us()-pending.received_us)>wire::CommandQueue::max_age_us;
         wire::Frame response;
         if(stale) {++command_stale;service.reject_admission(port,pending.frame,response,Result::Stale);}
         else {
             dispatch_fault_generation=pending.fault_generation;dispatching_command=true;
-            service.handle(port,pending.frame,response);
+#if REHAB_ENABLE_APPLICATION
+            dispatch_epoch=pending.epoch;dispatch_port=port;
+            dispatch_transport_generation=pending.transport_generation;
+#endif
+            handle_frame(port,pending.frame,response);
             dispatching_command=false;
+#if REHAB_ENABLE_APPLICATION
+            CRITICAL_SECTION(){owner_port=owner_session?service.owner_transport():3;}
+            training_publish();
+#endif
         }
         respond(port,pending.transport_generation,response);
     }
@@ -354,10 +432,18 @@ void service_transports() {
 uint32_t diagnostic_word(unsigned index) {
     CRITICAL_SECTION() {
         switch(index) {
+#if REHAB_ENABLE_APPLICATION
+            case 0:return unsigned(published.state);case 1:return unsigned(published.mode);
+            case 2:return latched|published.faults;case 3:return owner_session?1:0;case 4:return owner_epoch;
+            case 5:return published.config_valid;case 6:return published.force_valid;case 7:return published.sample_age_us;
+            case 8:return native_rejected;case 9:return native_writers;
+            case 27:return log_dropped;case 28:return published.stats.repetitions;
+#else
             case 2:return latched;
-            case 7:return UINT32_MAX; // Physical force has not been calibrated.
+            case 7:return UINT32_MAX;
+#endif // Physical force has not been calibrated.
             case 10:return !hardware_ready();
-            case 11:return 2;case 12:case 13:return 1;
+            case 11:return REHAB_STAGE;case 12:case 13:return 1;
             case 14:return command_overflow;case 15:return rx_overflow;case 16:return tx_overflow;
             case 21:return ext_spi_arbiter.diagnostics().timeouts;case 22:return ext_spi_arbiter.diagnostics().errors;
             case 23:return ext_spi_arbiter.diagnostics().rejected;case 24:return ext_spi_arbiter.diagnostics().highwater;
@@ -427,6 +513,12 @@ uint32_t diagnostic_word(unsigned index) {
 float diagnostic_float(unsigned index) {
     CRITICAL_SECTION(){
         switch(index) {
+#if REHAB_ENABLE_APPLICATION
+            case 0:return published.length_m;case 1:return published.speed_m_s;case 2:return published.force_n;
+            case 3:return target.torque_nm;case 4:return published.stats.power_w;
+            case 5:return published.stats.positive_energy_j;case 6:return published.stats.negative_energy_j;
+            case 7:return published.stats.rfd_n_s;
+#endif
             case 8:return vbus_voltage;
             case 9:return fet_temp;
             case 10:return aux_temp;
@@ -436,4 +528,24 @@ float diagnostic_float(unsigned index) {
     return NAN;
 }
 }}
-namespace rehab { void native_emergency_stop() {platform::trip(platform::FaultStop);} }
+namespace rehab {
+#if REHAB_ENABLE_APPLICATION
+bool begin_native_write() {
+    CRITICAL_SECTION(){
+        if(platform::owner_session){++platform::native_rejected;return false;}
+        ++platform::native_writers;return true;
+    }
+    return false;
+}
+void end_native_write(){CRITICAL_SECTION(){if(platform::native_writers)--platform::native_writers;}}
+bool native_input_allowed(){return __atomic_load_n(&platform::owner_session,__ATOMIC_ACQUIRE)==0;}
+bool native_stop_property(const void* object,const void* value,size_t length) {
+    if(!native_input_allowed() && object==&axes[0].requested_state_ && length==sizeof(axes[0].requested_state_)) {
+        uint32_t state=0;std::memcpy(&state,value,length);
+        if(state==Axis::AXIS_STATE_IDLE){native_emergency_stop();return true;}
+    }
+    return false;
+}
+#endif
+void native_emergency_stop(){platform::trip(1u);}
+}

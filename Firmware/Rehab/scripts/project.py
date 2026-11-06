@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V1.3 peripherals/native-control entrypoint. Only the flash action accesses hardware."""
+"""V1.3 training/native-control entrypoint; full is the default profile. Only the flash action accesses hardware."""
 import argparse
 import contextlib
 import hashlib
@@ -14,7 +14,7 @@ import build as firmware_build
 import resources
 
 FW = Path(__file__).resolve().parents[2]
-ARTIFACTS = FW / 'build/rehab/v13/peripherals'
+ARTIFACTS = FW / 'build/rehab/v13/full'
 FILENAMES = tuple('ODriveFirmware.' + suffix for suffix in ('elf', 'hex', 'bin', 'map'))
 
 
@@ -23,14 +23,13 @@ def run_guard():
                    cwd=FW, check=True)
 
 
-def validate(folder=ARTIFACTS, profile='peripherals'):
+def validate(folder=ARTIFACTS, profile='full'):
     """Reject failed, mismatched, stale or modified output before programmer launch."""
-    if profile != 'peripherals': raise RuntimeError('Unsupported project profile')
+    if profile not in ('peripherals', 'full'): raise RuntimeError('Unsupported project profile')
     report = json.loads((folder / 'build.json').read_text(encoding='utf-8'))
-    native = profile == 'peripherals'
     required = {'status': 'passed', 'board': 'v13', 'profile': profile,
-                'real_motor_enabled': native, 'native_control': native,
-                'motion_policy': 'native_board_control' if native else 'rehab_inhibited'}
+                'real_motor_enabled': True, 'native_control': True,
+                'motion_policy': 'native_board_control'}
     for key, value in required.items():
         if report.get(key) != value or (isinstance(value, bool) and report.get(key) is not value):
             raise RuntimeError('Refusing artifact: invalid ' + key)
@@ -50,8 +49,9 @@ def validate(folder=ARTIFACTS, profile='peripherals'):
     if not all(name in endpoints for name in ('rehab', 'board_revision', 'hardware_locked')):
         raise RuntimeError('Refusing artifact: missing V1.3 interface')
     elf = folder / 'ODriveFirmware.elf'
-    print('VERIFIED: rehab-v1.3 / ' + profile + (' / native motor commands CAPABLE; boot IDLE, explicit command required'
-          if native else ' / real motor LOCKED'), flush=True)
+    print('VERIFIED: rehab-v1.3 / ' + profile +
+          ' / native motor commands CAPABLE; boot IDLE, explicit command required' +
+          ('; training requires explicit Acquire/Enable/Start' if profile == 'full' else ''), flush=True)
     print('ELF: ' + str(elf), flush=True)
     print('SHA256: ' + report['artifact_sha256'][elf.name], flush=True)
     return elf
@@ -91,11 +91,11 @@ def project_lock():
         path.unlink()
 
 
-def execute(action, dry_run=False, serial='', profile='peripherals'):
+def execute(action, dry_run=False, serial='', profile='full'):
     # Reject malformed parameters before starting a build, with no device access.
-    if action not in ('build', 'check', 'flash') or profile != 'peripherals':
+    if action not in ('build', 'check', 'flash') or profile not in ('peripherals', 'full'):
         raise RuntimeError('Unsupported action/profile')
-    folder = ARTIFACTS
+    folder = ARTIFACTS.parent / profile
     command = programmer_command(folder / 'ODriveFirmware.elf', serial)
     with project_lock():
         run_guard()
@@ -116,7 +116,7 @@ def main():
     parser.add_argument('action', choices=('build', 'check', 'flash'))
     parser.add_argument('--dry-run', action='store_true', help='flash preflight only; never launch OpenOCD')
     parser.add_argument('--serial', default='', help='Optional ST-Link serial number')
-    parser.add_argument('--profile', choices=('peripherals',), default='peripherals')
+    parser.add_argument('--profile', choices=('full', 'peripherals'), default='full')
     args = parser.parse_args()
     try:
         execute(args.action, args.dry_run, args.serial, args.profile)

@@ -72,7 +72,11 @@ void ODrive::clear_errors() {
 
 namespace rp = rehab::platform;
 namespace rw = rehab::wire;
+#if REHAB_ENABLE_APPLICATION
+using Result = rehab::Result;
+#else
 using Result = rw::PeripheralResult;
+#endif
 static void reset_runtime() {
     mock_now_ms=1; mock_primask=mock_ipsr=0; clear_injection=nullptr; events.clear();
     motors[0]=Motor{};controllers[0]=Controller{};encoders[0]=Encoder{};odrv=ODrive{};
@@ -84,7 +88,14 @@ static void reset_runtime() {
     rp::commands={};rp::command_queue_full=rp::command_stale=0;
     rp::boundary_revision=0;rp::dispatching_command=false;rp::started=false;
     for(unsigned i=0;i<3;++i){rp::rx[i]={};rp::tx[i]={};rp::parsers[i]={};rp::rx_boundary[i]=rp::boundary_seen[i]=rp::transport_generation[i]=0;}
+#if REHAB_ENABLE_APPLICATION
+    rp::engine=rehab::Engine{};rp::feedback={};rp::published={};rp::target={};rp::limits={};
+    rp::owner_session=rp::native_writers=rp::native_rejected=0;rp::owner_epoch=1;rp::owner_port=3;
+    rp::training_modes_set=rp::native_clear_requested=false;rp::owner_heartbeat_us=0;
+    rp::service.~Service();new (&rp::service) rw::Service(rp::engine,rp::hooks);
+#else
     rp::service=rw::PeripheralService(rp::hooks);
+#endif
     rp::pending_network={};rp::network_revision=rp::network_seen=0;
     CriticalSectionContext::before_enter=nullptr;
 }
@@ -141,6 +152,7 @@ static void send_bytes(unsigned port,rw::Command command,uint32_t session=0,uint
 static void submit(unsigned port,rw::Command command,uint32_t session=0,uint32_t sequence=1) {
     send_bytes(port,command,session,sequence);rp::service_transports();
 }
+#ifndef TRAINING_FIXTURE_ONLY
 static void test_queue_boundaries() {
     reset_runtime();rp::early_init();idle_native();
     submit(0,rw::Command::Hello);auto hello=replies(0);CHECK(hello.size()==1);
@@ -212,3 +224,5 @@ int main() {
  } catch(const TestFailure&) {return 1;}
  return 0;
 }
+
+#endif // TRAINING_FIXTURE_ONLY

@@ -374,3 +374,20 @@ Reviewed critical SHA256:
 This cleanup does not establish the electrical cause of current jumps or qualify the motor/power stage.
 
 Final post-registration host regression: 47 suites passed, 0 failed, 1 skipped (--quick upstream native suite). Final project check passed; ELF SHA256 3f5cbc5a4ef022af7847b3b7dfdf144cae1b1ff9b28fe7d177c61c2b24e2a5d6. No hardware accessed.
+
+
+## 2026-11-06: V1.3 explicit training ownership, native-first boot
+
+User-approved restoration from 67a8be7c (FOCV2.2). `restore_review` independently reviewed the actual adapter, protocol, client and build changes and approved after correction of Release/STOP atomicity, cached-heartbeat renewal, mutation generation admission and numeric conversion ordering. Adapter is a .hpp included in the existing source digest, so editing it invalidates old firmware artifacts. No hardware connected, flashed or operated.
+
+Full now defaults to native idle, owner=0; peripherals remains a separate fallback. Native writes/requests remain free while unowned. Acquire rejects pending tasks and conflicting native sources; Enable does not move; Start routes through native torque control. Fault/disconnect retains owner; Finish/actual idle/Release restores saved modes and clears targets/integrators without restoring old motion. Fresh mutations use a bounded short exclusion; parsing/CRC and native fault-clear work remain outside it. STOP and native protections remain active. No numerical protection thresholds or motor defaults changed; OV=0 default remains an explicitly documented pre-test configuration requirement.
+
+Source comparison: no changes to MotorControl algorithms, native DRV8301, any board source or Rehab/core/engine.cpp. Existing AS5600 content and both immutable history archives retained. No capture, bench gates or pass flags restored. Hello/Status/63-word Diagnostics and retired IDs22..26 remain compatible.
+
+Actual V1.3 runtime/Service/Engine integration: 734 checks passed, including no-owner native isolation, native writer/queued-work exclusion, observer denial, enable-without-motion, mode/target cleanup, heartbeat replay, stale command mutation, STOP re-trigger, sensor and target deadlines. Python client: 16 loopback-only tests passed. Shared host regression and ARM build results are recorded below after completion; no hardware timing or physical training performance claim.
+
+Only paths in [v13_training_hash_delta.json](v13_training_hash_delta.json) registered; no blanket freeze, allowlist expansion or historical hash refresh. See [usage and limits](v13_training.md).
+
+Final verification: 49 host suites passed, 0 failed, 1 skipped (upstream native suite excluded by --quick). V1.3 integration 734 checks and client 16 tests passed. Original baseline, V1.2 full, V1.3 peripherals and V1.3 full ARM builds/resource checks all passed; final editor context is V1.3 full. Full flash load 367760 bytes, SRAM reserved 85812 bytes (45260 unreserved), CCM RTOS heap 65536 bytes. These are linked sizes, not live stack/heap or timing measurements.
+
+Full ELF SHA256: `61c84ee5a77a81cfb20a9613b716e73e58011097d06dc8cd8ad9f2ae37391a31`. Source SHA256: `f1d57e2d26218c26a7c2c5f00d1881351063860a2cce1e63c77e97ec61176918`. Detailed evidence: `build/rehab/tests/report.json`, `build/rehab/restore-build-verification.json`. No device operations performed.

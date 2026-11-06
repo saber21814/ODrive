@@ -13,6 +13,11 @@
 #endif
 
 struct RuntimeCritical : CriticalSectionContext {};
+inline void __disable_irq() {
+    if(CriticalSectionContext::before_enter)CriticalSectionContext::before_enter();
+    mock_primask=1;
+}
+inline void __set_PRIMASK(uint32_t mask) {mock_primask=mask;}
 #define CRITICAL_SECTION() if (RuntimeCritical runtime_critical_{}; true)
 
 using StackType_t = uint32_t;
@@ -59,9 +64,10 @@ struct Controller {
     } config_;
     using Config_t=Config;
     uint32_t error_=0, input_pos_updates=0;
-    float input_pos_=0, vel_integrator_torque_=0;
+    float input_pos_=0, pos_setpoint_=0, vel_setpoint_=0, vel_integrator_torque_=0;
+    void set_input_pos_and_steps(float pos) { input_pos_=pos; }
     bool apply_config() { config_.parent=this; return true; }
-    void reset() { vel_integrator_torque_=torque_setpoint_=0; }
+    void reset() { vel_setpoint_=vel_integrator_torque_=torque_setpoint_=0; }
     void input_pos_updated() { ++input_pos_updates; }
     bool anticogging_valid_ = false;
     float input_torque_ = 0, input_vel_ = 0, torque_setpoint_ = 0;

@@ -44,8 +44,8 @@ def source_digest():
 def build(profile, jobs=1, board='v12'):
     if profile not in ('baseline', *PROFILES) or board not in ('v12', 'v13'):
         raise RuntimeError('Unsupported build profile or board')
-    if board == 'v13' and profile not in ('baseline', 'peripherals'):
-        raise RuntimeError('V1.3 supports only peripherals; application/test profiles are retired')
+    if board == 'v13' and profile not in ('baseline', 'peripherals', 'full'):
+        raise RuntimeError('V1.3 supports baseline, peripherals and full profiles')
     OUT.mkdir(parents=True, exist_ok=True)
     dest = (OUT / 'v13' if board == 'v13' and profile != 'baseline' else OUT) / profile
     dest.mkdir(parents=True, exist_ok=True)
@@ -95,10 +95,10 @@ def build(profile, jobs=1, board='v12'):
         size = subprocess.check_output(['arm-none-eabi-size', str(dest/'ODriveFirmware.elf')], text=True)
         if source_digest()!=source_sha: raise RuntimeError('Firmware sources changed during build; rebuild after edits finish.')
         report = {'profile':profile, 'board':'original' if profile=='baseline' else board, 'status':'passed', 'source_sha256':source_sha, 'elapsed_s':time.time()-started, 'compiler':subprocess.check_output(['arm-none-eabi-gcc','--version'], text=True).splitlines()[0], 'size':size,
-                  'real_motor_enabled':None if profile=='baseline' else board=='v13' and profile=='peripherals',
-                  'native_control':board=='v13' and profile=='peripherals',
+                  'real_motor_enabled':None if profile=='baseline' else board=='v13' and profile in ('peripherals', 'full'),
+                  'native_control':board=='v13' and profile in ('peripherals', 'full'),
                   'motion_policy':('original_board_native' if profile=='baseline' else
-                                   'native_board_control' if board=='v13' and profile=='peripherals' else 'rehab_inhibited'),
+                                   'native_board_control' if board=='v13' and profile in ('peripherals', 'full') else 'rehab_inhibited'),
                   'artifact_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in dest.glob('ODriveFirmware.*')}}
         (dest/'build.json').write_text(json.dumps(report,indent=2), encoding='utf-8')
         print(size, end='')
@@ -121,7 +121,7 @@ if __name__ == '__main__':
     a=p.parse_args()
     try:
         if a.recover_config: recover_config()
-        profiles = ['baseline', 'peripherals'] if a.board=='v13' else ['baseline', *PROFILES]
+        profiles = ['baseline', 'peripherals', 'full'] if a.board=='v13' else ['baseline', *PROFILES]
         for name in profiles if a.profile=='all' else [a.profile]: build(name,a.jobs,a.board)
     except (RuntimeError,subprocess.CalledProcessError) as e:
         print(e,file=sys.stderr);sys.exit(1)

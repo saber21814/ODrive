@@ -5,7 +5,7 @@
 namespace rehab {
 // The implementation only masks interrupts for counter/state updates, never for
 // the lifetime of this guard. A handoff waits for all admitted writes to finish.
-#if defined(REHAB_V13)
+#if defined(REHAB_V13) && !REHAB_ENABLE_APPLICATION
 inline bool begin_native_write() { return true; }
 inline void end_native_write() {}
 inline bool native_stop_property(const void*, const void*, size_t) { return false; }

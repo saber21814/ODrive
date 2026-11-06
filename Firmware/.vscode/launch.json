@@ -8,8 +8,8 @@
             "type": "cortex-debug",
             "servertype": "openocd",
             "request": "launch",
-            "name": "Debug Rehab V1.3 peripherals - ST-Link",
-            "executable": "${workspaceFolder}/build/rehab/v13/peripherals/ODriveFirmware.elf",
+            "name": "Debug Rehab V1.3 full - ST-Link (boot IDLE)",
+            "executable": "${workspaceFolder}/build/rehab/v13/full/ODriveFirmware.elf",
             "preLaunchTask": "build",
             "configFiles": [
                 "interface/stlink-v2.cfg",

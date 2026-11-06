@@ -158,6 +158,16 @@ def specifications(quick):
         production=peripheral_sources+["Rehab/platform/runtime_v13.cpp"],
         notes=["Actual V13 runtime, mocked hardware; STOP/native configuration/transport isolation, no physical acceptance."]))
 
+    suites.append(suite("runtime_training_v13",["Tests/rehab/training_runtime_tests.cpp"]+SERVICE,
+        flags=GNU_STRICT,definitions=["REHAB_V12=1","REHAB_V13=1","REHAB_ENABLE_APPLICATION=1",
+            "REHAB_ENABLE_PROTOCOL=1","REHAB_ENABLE_NETWORK=1","REHAB_ENABLE_HX711=1",
+            "REHAB_ENABLE_TRAINING=1","REHAB_ENABLE_STATISTICS=1","REHAB_ENABLE_COMPENSATION=1","REHAB_STAGE=6"],
+        includes=["Tests/rehab/runtime_mocks","Tests/rehab/driver_mocks","Drivers/STM32","fibre-cpp/include","."],
+        production=SERVICE+["Rehab/platform/runtime_v13.cpp","Rehab/platform/training_v13.hpp"],
+        notes=["Actual V13 training adapter and wire service with hardware carriers; ownership/ISR/native isolation, not physical validation."]))
+    client=suite('training_client',['Tests/rehab/training_client_tests.py'],production=['Rehab/scripts/training_client.py'])
+    client['python']=True;suites.append(client)
+
     suites.append(suite(
         "native_ingress", ["Tests/rehab/ingress_tests.cpp", "Rehab/platform/isr_timing.cpp"] + SERVICE,
         flags=GNU_STRICT + ["-Wno-unused-parameter"], definitions=runtime_definitions,

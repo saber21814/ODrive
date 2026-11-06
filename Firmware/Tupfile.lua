@@ -403,20 +403,31 @@ if boardversion == 'rehab-v1.2' or boardversion == 'rehab-v1.3' then
     end
     local extra_sources
     if boardversion == 'rehab-v1.3' then
-        -- One V1.3 target: native control plus basic peripherals, no application.
-        if tup.getconfig('REHAB_STAGE') ~= '2' or
+        -- V1.3 native control plus either peripheral fallback or full training.
+        local application = tup.getconfig('REHAB_STAGE') == '6'
+        if (not application and tup.getconfig('REHAB_STAGE') ~= '2') or
            tup.getconfig('REHAB_HX711') ~= 'true' or
            tup.getconfig('REHAB_NETWORK') ~= 'true' or
            tup.getconfig('REHAB_PROTOCOL') ~= 'true' then
-            error('V1.3 supports only the peripherals profile')
+            error('V1.3 supports only peripherals (stage 2) or full (stage 6)')
         end
-        for _, option in ipairs({'APPLICATION', 'TRAINING', 'STATISTICS', 'COMPENSATION', 'REAL_MOTOR'}) do
-            if tup.getconfig('REHAB_'..option) == 'true' then
-                error('V1.3 application/test options are retired: '..option)
+        for _, option in ipairs({'APPLICATION', 'TRAINING', 'STATISTICS', 'COMPENSATION'}) do
+            if (tup.getconfig('REHAB_'..option) == 'true') ~= application then
+                error('V1.3 feature/profile mismatch: '..option)
             end
         end
-        extra_sources = {'Rehab/protocol/frame.cpp', 'Rehab/protocol/peripheral_service.cpp',
+        if tup.getconfig('REHAB_REAL_MOTOR') == 'true' then
+            error('V1.3 uses native board control; REHAB_REAL_MOTOR is not a profile option')
+        end
+        extra_sources = {'Rehab/protocol/frame.cpp',
             'Rehab/platform/runtime_v13.cpp', 'Rehab/platform/stream.cpp'}
+        if application then
+            table.insert(extra_sources, 'Rehab/core/engine.cpp')
+            table.insert(extra_sources, 'Rehab/protocol/config_fields.cpp')
+            table.insert(extra_sources, 'Rehab/protocol/service.cpp')
+        else
+            table.insert(extra_sources, 'Rehab/protocol/peripheral_service.cpp')
+        end
     else
         extra_sources = {'Rehab/core/engine.cpp', 'Rehab/protocol/frame.cpp',
             'Rehab/protocol/config_fields.cpp', 'Rehab/protocol/service.cpp',

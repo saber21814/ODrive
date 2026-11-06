@@ -14,7 +14,7 @@ import sqlite3
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-EDITOR = ROOT/'build/rehab/editor'
+EDITOR = ROOT/'build/rehab/v13/editor'
 HEADER_NAMES = ('interfaces.hpp', 'function_stubs.hpp', 'endpoints.hpp', 'type_info.hpp')
 
 
@@ -25,9 +25,9 @@ def write_json(path, value):
     temp.replace(path)
 
 
-def capture(board='v12', profile='full'):
+def capture(board='v13', profile='full'):
     """Call after the selected build, before restoring tup.config."""
-    if (board, profile) not in (('v12', 'full'), ('v13', 'peripherals')):
+    if (board, profile) not in (('v12', 'full'), ('v13', 'full'), ('v13', 'peripherals')):
         raise RuntimeError('Unsupported editor profile')
     global EDITOR
     EDITOR=ROOT/('build/rehab/v13/peripherals/editor' if profile=='peripherals' else
@@ -96,13 +96,15 @@ def configure():
               if not pathlib.Path(a[2:]).is_absolute() else pathlib.Path(a[2:]).as_posix()
               for a in args if a.startswith('-I')]
     includes=list(dict.fromkeys(includes))
-    config={'name':'ODrive Rehab V1.2', 'compilerPath':args[0],
-            'compileCommands':'${workspaceFolder}/build/rehab/editor/compile_commands.json',
+    context=json.loads((EDITOR/'context.json').read_text())
+    board=context['board']
+    config={'name':'ODrive Rehab '+('V1.3' if board=='v13' else 'V1.2')+' '+context['profile'], 'compilerPath':args[0],
+            'compileCommands':'${workspaceFolder}/'+(EDITOR/'compile_commands.json').relative_to(ROOT).as_posix(),
             'includePath':includes, 'defines':[a[2:] for a in args if a.startswith('-D')],
             'compilerArgs':['-mthumb','-mcpu=cortex-m4','-mfpu=fpv4-sp-d16','-mfloat-abi=hard'],
             'intelliSenseMode':'windows-gcc-arm', 'cStandard':'c99', 'cppStandard':'c++17',
             'browse':{'path':['${workspaceFolder}/MotorControl','${workspaceFolder}/Rehab',
-                       '${workspaceFolder}/Board/rehab_v12','${workspaceFolder}/Drivers',
+                       '${workspaceFolder}/Board/rehab_'+board,'${workspaceFolder}/Drivers',
                        '${workspaceFolder}/communication','${workspaceFolder}/fibre-cpp/include'],
                       'limitSymbolsToIncludedHeaders':True}}
     backup=ROOT/'build/rehab/editor-before'

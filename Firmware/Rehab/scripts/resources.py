@@ -15,8 +15,8 @@ PROFILES = ['baseline', 'native', 'hx711', 'network', 'peripherals', 'protection
 
 def inspect(name,board='v12',folder=None):
     if name not in PROFILES or board not in ('v12','v13'): raise RuntimeError('Unsupported resource profile or board')
-    if board=='v13' and name not in ('baseline','peripherals'):
-        raise RuntimeError('V1.3 supports only peripherals; application/test profiles are retired')
+    if board=='v13' and name not in ('baseline','peripherals','full'):
+        raise RuntimeError('V1.3 supports baseline, peripherals and full profiles')
     folder = folder if folder is not None else (OUT/'v13' if board=='v13' and name!='baseline' else OUT)/name
     elf = folder/'ODriveFirmware.elf'
     sections = subprocess.check_output(['arm-none-eabi-size', '-A', str(elf)], text=True)
@@ -40,7 +40,13 @@ def inspect(name,board='v12',folder=None):
         if bool(re.search(r'\b'+function+r'$',symbols,re.M)) != telemetry:
             errors.append('ISR telemetry feature/symbol mismatch: '+function)
     if v12 and board=='v13':
-        for retired in ('rehab::Engine::', 'rehab::capture::', 'rehab_board_capture_',
+        application = name == 'full'
+        for module in ('rehab::Engine::', 'rehab::wire::Service::'):
+            if (module in symbols) != application:
+                errors.append('V1.3 application feature/symbol mismatch: '+module)
+        if 'rehab::wire::PeripheralService::' in symbols and application:
+            errors.append('Peripheral service linked into V1.3 full')
+        for retired in ('rehab::capture::', 'rehab_board_capture_',
                         'rehab_board_phase_adc_', 'PhaseAdcMonitor', 'rehab::bench::'):
             if retired in symbols: errors.append('Retired V1.3 implementation linked: '+retired)
         link_map = (folder/'ODriveFirmware.map').read_text(encoding='utf-8', errors='replace')
@@ -75,7 +81,7 @@ def inspect(name,board='v12',folder=None):
     if build.get('status')!='passed': errors.append('Build was not successful; old artifacts are not evidence')
     if build.get('board')!=('original' if name=='baseline' else board): errors.append('Artifact board mismatch')
     if build.get('profile')!=name: errors.append('Artifact profile mismatch')
-    native = name=='peripherals' and board=='v13'
+    native = name in ('peripherals','full') and board=='v13'
     if build.get('native_control') is not native: errors.append('Artifact native-control mode mismatch')
     if name!='baseline':
         if build.get('real_motor_enabled') is not native: errors.append('Artifact motor capability mismatch')
@@ -94,7 +100,7 @@ def main():
     p.add_argument('profile', choices=PROFILES+['all'], default='all', nargs='?')
     p.add_argument('--board',choices=['v12','v13'],default='v12')
     a=p.parse_args()
-    profiles = ['baseline','peripherals'] if a.board=='v13' else PROFILES
+    profiles = ['baseline','peripherals','full'] if a.board=='v13' else PROFILES
     if a.profile!='all' and a.profile not in profiles:
         p.error('Unsupported profile for selected board')
     reports=[inspect(name,a.board) for name in profiles if a.profile==name or a.profile=='all']

@@ -54,7 +54,11 @@ void Service::handle(unsigned port,const Frame& in,Frame& out,uint32_t now,const
         if(decision==Replay::Decision::Cached) { out=cached;return; }
         if(decision==Replay::Decision::Reject) result=Result::BadSequence;
         else {
-            result=execute(port,in,out,now,fb);
+            result=hooks_.begin_mutation?hooks_.begin_mutation(hooks_.ctx,in.command):Result::Ok;
+            if(result==Result::Ok) {
+                result=execute(port,in,out,now,fb);
+                if(hooks_.end_mutation)hooks_.end_mutation(hooks_.ctx);
+            }
             put32(out.payload,uint32_t(result));connection.replay.remember(in,out);
             if(hooks_.command_log)hooks_.command_log(hooks_.ctx,in.command,result);
             return;
@@ -116,6 +120,9 @@ Result Service::execute(unsigned port,const Frame& in,Frame& out,uint32_t now,co
         out.length=uint16_t(w.size);return Result::Ok;
     }
     if(command==Command::SetConfig) {
+#if defined(REHAB_V13)
+        if(owner_transport_!=port || s.session!=in.session)return Result::NotOwner;
+#endif
         if(!fb.idle || fb.armed || (s.session && s.session!=in.session))return Result::Busy;
         if(!in.length || in.length%8)return Result::InvalidConfig;
         Config candidate=connection.staged;
@@ -126,6 +133,9 @@ Result Service::execute(unsigned port,const Frame& in,Frame& out,uint32_t now,co
         connection.staged=candidate;return Result::Ok;
     }
     if(command==Command::CommitConfig) {
+#if defined(REHAB_V13)
+        if(owner_transport_!=port || s.session!=in.session)return Result::NotOwner;
+#endif
         if(in.length)return Result::InvalidConfig;
         if(!fb.idle || fb.armed || (s.session && s.session!=in.session))return Result::Busy;
         return engine_.configure(connection.staged);
